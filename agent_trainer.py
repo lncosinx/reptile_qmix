@@ -108,12 +108,16 @@ class AgentTrainer:
 
         # 获取时间序列的有效位 Mask: 形状 (B, T)
         masks = torch.tensor(batch['masks'], dtype=torch.float32, device=self.device)
+
+        # 在 agent_trainer.py 的 train_step 方法中：
+        # 假设 batch['masks'] 的 shape 是 (B, Seq_len, N)
+        # 获取这个 batch 中真实的最大有效长度 (非 0 元素的数量)
+        valid_steps = batch['masks'].sum(dim=1).max().int().item()
         
         B, T, N, C, H, W = states.shape
 
-        # Calculate Burn-in (e.g., first half) and Learn (second half) lengths
-        burn_in_len = T // 2
-        learn_len = T - burn_in_len
+        # 动态设定 burn_in，例如只取有效长度的前 1/3 作为 burn-in，如果太短则不 burn-in
+        burn_in = min(8, valid_steps // 3)  
 
         # Initialize hidden states
         # Shape: (B * N, hidden_dim)
@@ -126,7 +130,7 @@ class AgentTrainer:
         # STRICT REQUIREMENT: Prevent VRAM OOM on RTX 4090 by using torch.no_grad().
         # We only pass data through DRQN to update the LSTM hidden states without saving the graph.
         with torch.no_grad():
-            for t in range(burn_in_len):
+            for t in range(burn_in):
                 # Reshape states to (B*N, C, H, W)
                 obs_t = states[:, t].view(B * N, C, H, W)
                 next_obs_t = next_states[:, t].view(B * N, C, H, W)
@@ -214,7 +218,7 @@ class AgentTrainer:
         q_targets = torch.stack(q_targets, dim=1)
 
         # 截取 Learn 阶段的 masks
-        learn_masks = masks[:, burn_in_len:]
+        learn_masks = masks[:, burn_in:]
 
         # 使用 Masked MSE Loss
         # F.mse_loss(reduction='none') 会返回每个元素的独立 loss，形状为 (B, learn_len)

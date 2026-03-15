@@ -99,6 +99,11 @@ def run_worker_task(worker_id, global_state_dict, config):
             # Select actions (Decentralized Execution)
             actions, next_hidden_state = trainer.select_actions(obs, hidden_state, epsilon=config.get('epsilon', 0.1))
 
+            # 强制接管已完成智能体的动作
+            for i in range(env.get_num_agents()):
+                if dones[i]:
+                    actions[i] = 0  # 强制设为 0 (Stay) 操作，避免触发 Rust 端的撞墙惩罚
+
             # Step environment
             next_obs, rewards, dones, truncated, infos = env.step(actions)
 
@@ -137,12 +142,11 @@ def run_worker_task(worker_id, global_state_dict, config):
 
         # Perform Local Update using TBPTT
         if buffer.len() >= batch_size:
-            # Sample batch from Rust Buffer
-            batch = buffer.sample(batch_size)
-
-            # Centralized Training Step
-            loss = trainer.train_step(batch, gamma=config.get('gamma', 0.99))
-            total_loss += loss
+            # 内部进行 4 次抽样更新，极大提升样本利用率和 4090 GPU 负载
+            for _ in range(4): 
+                batch = buffer.sample(batch_size)
+                loss = trainer.train_step(batch, gamma=config.get('gamma', 0.99))
+                total_loss += loss
 
     # 3. Compute Parameter Differences: \Delta = \theta_{task} - \theta_{global}
     # This prevents sending huge absolute weights back and saves IPC overhead.
