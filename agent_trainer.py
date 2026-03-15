@@ -238,7 +238,7 @@ class AgentTrainer:
         # Optimize
         self.optimizer.zero_grad()
         # 使用 Scaler 接管反向传播
-        if self.use_amp and self.scaler is not None:
+        if self.use_scaler and self.scaler is not None:
             # 1. 放缩 Loss 并反向传播
             self.scaler.scale(loss).backward()
             
