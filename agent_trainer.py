@@ -106,6 +106,9 @@ class AgentTrainer:
         dones = torch.tensor(batch['dones'], dtype=torch.float32, device=self.device)
         global_maps = torch.tensor(batch['global_maps'], dtype=torch.float32, device=self.device)
 
+        # 获取时间序列的有效位 Mask: 形状 (B, T)
+        masks = torch.tensor(batch['masks'], dtype=torch.float32, device=self.device)
+        
         B, T, N, C, H, W = states.shape
 
         # Calculate Burn-in (e.g., first half) and Learn (second half) lengths
@@ -210,8 +213,18 @@ class AgentTrainer:
         q_evals = torch.stack(q_evals, dim=1)
         q_targets = torch.stack(q_targets, dim=1)
 
-        # Calculate MSE Loss over the learning sequence
-        loss = F.mse_loss(q_evals, q_targets.detach())
+        # 截取 Learn 阶段的 masks
+        learn_masks = masks[:, burn_in_len:]
+
+        # 使用 Masked MSE Loss
+        # F.mse_loss(reduction='none') 会返回每个元素的独立 loss，形状为 (B, learn_len)
+        element_wise_loss = F.mse_loss(q_evals, q_targets.detach(), reduction='none')
+        
+        # 掩码相乘，把 padding 的 garbage 产生的 loss 归零
+        masked_loss = element_wise_loss * learn_masks
+        
+        # 求平均时，只能除以有效的 step 数量，用 clamp 防止除以 0
+        loss = masked_loss.sum() / learn_masks.sum().clamp(min=1.0)
 
         # Optimize
         self.optimizer.zero_grad()

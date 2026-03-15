@@ -1,9 +1,9 @@
-use pyo3::prelude::*;
 use numpy::PyArray1;
-use rand::Rng;
-use rand::seq::SliceRandom;
-use std::collections::VecDeque;
 use numpy::{PyReadonlyArray1, PyReadonlyArray4};
+use pyo3::prelude::*;
+use rand::seq::SliceRandom;
+use rand::Rng;
+use std::collections::VecDeque;
 
 #[derive(Clone)]
 struct FlattenedEpisode {
@@ -18,7 +18,7 @@ struct FlattenedEpisode {
     length: usize,
     // Prefix with _ to suppress unused warning
     _num_agents: usize,
-    _obs_shape: (usize, usize, usize), // C, H, W
+    _obs_shape: (usize, usize, usize),        // C, H, W
     _global_map_shape: (usize, usize, usize), // C, H_g, W_g
 }
 
@@ -28,7 +28,7 @@ impl FlattenedEpisode {
         episode_dict: &PyAny,
         num_agents: usize,
         obs_shape: (usize, usize, usize),
-        global_map_shape: (usize, usize, usize)
+        global_map_shape: (usize, usize, usize),
     ) -> PyResult<Self> {
         // Expecting dictionary with lists/arrays
         let states_list: Vec<PyObject> = episode_dict.get_item("states")?.extract()?;
@@ -94,7 +94,13 @@ struct RustReplayBuffer {
 #[pymethods]
 impl RustReplayBuffer {
     #[new]
-    fn new(capacity: usize, seq_len: usize, num_agents: usize, obs_shape: (usize, usize, usize), global_map_shape: (usize, usize, usize)) -> Self {
+    fn new(
+        capacity: usize,
+        seq_len: usize,
+        num_agents: usize,
+        obs_shape: (usize, usize, usize),
+        global_map_shape: (usize, usize, usize),
+    ) -> Self {
         RustReplayBuffer {
             capacity,
             seq_len,
@@ -109,7 +115,13 @@ impl RustReplayBuffer {
         if self.buffer.len() >= self.capacity {
             self.buffer.pop_front();
         }
-        let episode = FlattenedEpisode::from_py(py, episode_data, self.num_agents, self.obs_shape, self.global_map_shape)?;
+        let episode = FlattenedEpisode::from_py(
+            py,
+            episode_data,
+            self.num_agents,
+            self.obs_shape,
+            self.global_map_shape,
+        )?;
         self.buffer.push_back(episode);
         Ok(())
     }
@@ -133,7 +145,10 @@ impl RustReplayBuffer {
 
         let mut rng = rand::thread_rng();
         let indices: Vec<usize> = (0..self.buffer.len()).collect();
-        let sampled_indices: Vec<usize> = indices.choose_multiple(&mut rng, batch_size).cloned().collect();
+        let sampled_indices: Vec<usize> = indices
+            .choose_multiple(&mut rng, batch_size)
+            .cloned()
+            .collect();
 
         self._construct_batch(py, &sampled_indices)
     }
@@ -159,13 +174,18 @@ impl RustReplayBuffer {
         let mut batch_global_maps = vec![0.0; batch_size * global_map_dim];
 
         let mut rng = rand::thread_rng();
+        let mut batch_masks = vec![0.0f32; batch_size * t]; // 默认全 0（无效）
 
         for (i, &idx) in indices.iter().enumerate() {
             let episode = &self.buffer[idx];
 
             // Random start index
             // Ensure we can take seq_len. Episode must be >= seq_len (handled in python usually, but let's be safe)
-            let max_start = if episode.length > t { episode.length - t } else { 0 };
+            let max_start = if episode.length > t {
+                episode.length - t
+            } else {
+                0
+            };
             let start_idx = rng.gen_range(0..=max_start);
             let end_idx = std::cmp::min(start_idx + t, episode.length);
             let actual_len = end_idx - start_idx;
@@ -182,23 +202,28 @@ impl RustReplayBuffer {
             let ep_action_start = start_idx * n;
             let ep_action_end = end_idx * n;
 
+            let mask_offset = i * t;
+            for m in 0..actual_len {
+                batch_masks[mask_offset + m] = 1.0;
+            }
+
             // Copy slices
-            batch_states[batch_state_offset .. batch_state_offset + actual_len * obs_dim]
+            batch_states[batch_state_offset..batch_state_offset + actual_len * obs_dim]
                 .copy_from_slice(&episode.states[ep_state_start..ep_state_end]);
 
-            batch_next_states[batch_state_offset .. batch_state_offset + actual_len * obs_dim]
+            batch_next_states[batch_state_offset..batch_state_offset + actual_len * obs_dim]
                 .copy_from_slice(&episode.next_states[ep_state_start..ep_state_end]);
 
-            batch_actions[batch_action_offset .. batch_action_offset + actual_len * n]
+            batch_actions[batch_action_offset..batch_action_offset + actual_len * n]
                 .copy_from_slice(&episode.actions[ep_action_start..ep_action_end]);
 
-            batch_rewards[batch_action_offset .. batch_action_offset + actual_len * n]
+            batch_rewards[batch_action_offset..batch_action_offset + actual_len * n]
                 .copy_from_slice(&episode.rewards[ep_action_start..ep_action_end]);
 
-            batch_dones[batch_action_offset .. batch_action_offset + actual_len * n]
+            batch_dones[batch_action_offset..batch_action_offset + actual_len * n]
                 .copy_from_slice(&episode.dones[ep_action_start..ep_action_end]);
 
-            batch_global_maps[batch_global_map_offset .. batch_global_map_offset + global_map_dim]
+            batch_global_maps[batch_global_map_offset..batch_global_map_offset + global_map_dim]
                 .copy_from_slice(&episode.global_map[0..global_map_dim]);
 
             // Zero-padding is implicit since we initialized with 0.0/0
@@ -215,14 +240,21 @@ impl RustReplayBuffer {
         let actions_shape = (batch_size, t, n);
         let global_maps_shape = (batch_size, gc, gh, gw);
 
+        let masks_shape = (batch_size, t); // [新增] 声明 masks 的形状
+
         let np_states = PyArray1::from_vec(py, batch_states).reshape(states_shape)?;
         let np_next_states = PyArray1::from_vec(py, batch_next_states).reshape(states_shape)?;
         let np_actions = PyArray1::from_vec(py, batch_actions).reshape(actions_shape)?;
         let np_rewards = PyArray1::from_vec(py, batch_rewards).reshape(actions_shape)?;
         let np_dones = PyArray1::from_vec(py, batch_dones).reshape(actions_shape)?;
-        let np_global_maps = PyArray1::from_vec(py, batch_global_maps).reshape(global_maps_shape)?;
+        let np_global_maps =
+            PyArray1::from_vec(py, batch_global_maps).reshape(global_maps_shape)?;
+
+        let np_masks = PyArray1::from_vec(py, batch_masks).reshape(masks_shape)?; // 转换为 numpy 返回：
 
         let dict = pyo3::types::PyDict::new(py);
+
+        dict.set_item("masks", np_masks)?;
         dict.set_item("states", np_states)?;
         dict.set_item("next_states", np_next_states)?;
         dict.set_item("actions", np_actions)?;
@@ -233,7 +265,6 @@ impl RustReplayBuffer {
         Ok(dict.into())
     }
 }
-
 
 // ---------------- Reward Calculator with Next Obs Check ----------------
 
@@ -278,7 +309,9 @@ impl RustRewardCalculator {
     }
 
     fn reset(&mut self) {
-        for x in &mut self.total_episode_reward { *x = 0.0; }
+        for x in &mut self.total_episode_reward {
+            *x = 0.0;
+        }
     }
 
     fn calculate<'py>(
@@ -286,14 +319,13 @@ impl RustRewardCalculator {
         py: Python<'py>,
         rewards: PyReadonlyArray1<f32>,
         obs: PyReadonlyArray4<f32>,
-        next_obs: PyReadonlyArray4<f32>, 
+        next_obs: PyReadonlyArray4<f32>,
         actions: PyReadonlyArray1<i64>,
         alignment_config: AlignmentConfig,
         stop_penalty_config: StopPenaltyConfig,
         step_penalty_config: StepPenaltyConfig,
-        goal_reward_multiple: Option<f32>
+        goal_reward_multiple: Option<f32>,
     ) -> PyResult<&'py PyArray1<f32>> {
-
         let rewards = rewards.as_array();
         let obs = obs.as_array();
         let next_obs = next_obs.as_array();
@@ -304,7 +336,7 @@ impl RustRewardCalculator {
         let c = shape[1];
         let h = shape[2];
         let w = shape[3];
-        
+
         let cy = (h / 2) as f32;
         let cx = (w / 2) as f32;
 
@@ -324,27 +356,34 @@ impl RustRewardCalculator {
                 // 这里为了性能，我们快速检查 Target Channel 的中心区域差异
                 let obs_slice = obs.slice(numpy::ndarray::s![i, .., .., ..]);
                 let next_obs_slice = next_obs.slice(numpy::ndarray::s![i, .., .., ..]);
-                
+
                 let mut diff_sum = 0.0;
                 // 遍历检查差异
                 for channel in 0..c {
-                     for r in 0..h {
-                         for col in 0..w {
-                             let d = obs_slice[[channel, r, col]] - next_obs_slice[[channel, r, col]];
-                             diff_sum += d.abs();
-                             if diff_sum > 0.001 { break; } 
-                         }
-                         if diff_sum > 0.001 { break; }
-                     }
-                     if diff_sum > 0.001 { break; }
+                    for r in 0..h {
+                        for col in 0..w {
+                            let d =
+                                obs_slice[[channel, r, col]] - next_obs_slice[[channel, r, col]];
+                            diff_sum += d.abs();
+                            if diff_sum > 0.001 {
+                                break;
+                            }
+                        }
+                        if diff_sum > 0.001 {
+                            break;
+                        }
+                    }
+                    if diff_sum > 0.001 {
+                        break;
+                    }
                 }
-                
+
                 if diff_sum < 0.001 {
                     did_move = false; // 确实没动
                 }
                 if action != 0 && !did_move {
-                r_val -= 0.15; 
-            }
+                    r_val -= 0.15;
+                }
             }
 
             // 2. Alignment Reward
@@ -366,26 +405,26 @@ impl RustRewardCalculator {
                         }
                     }
                 } else {
-                     for r in 0..h {
-                         for c in 0..w {
-                             if target_channel[[r, c]] > 0.0 {
-                                 target_y_sum += r as f32;
-                                 target_x_sum += c as f32;
-                                 count += 1.0;
-                             }
-                         }
-                     }
+                    for r in 0..h {
+                        for c in 0..w {
+                            if target_channel[[r, c]] > 0.0 {
+                                target_y_sum += r as f32;
+                                target_x_sum += c as f32;
+                                count += 1.0;
+                            }
+                        }
+                    }
                 }
 
                 if count > 0.0 {
                     let ty = target_y_sum / count;
                     let tx = target_x_sum / count;
-                    
+
                     // 矩阵坐标系: Target - Center
                     // 如果目标在上方(Row 0)，dy 为负；如果目标在右方(Col Max)，dx 为正
-                    let dy = ty - cy; 
+                    let dy = ty - cy;
                     let dx = tx - cx;
-                    
+
                     // [动作映射修正]
                     // 但修正 Y 轴符号以匹配矩阵坐标 (Up是负，Down是正)
                     let (ay, ax) = match action {
@@ -404,9 +443,7 @@ impl RustRewardCalculator {
                             let ndx = dx / dist;
                             let alignment = ndy * ay + ndx * ax;
 
-                            
-                            r_val += alignment * alignment_config.value.unwrap_or(0.1); 
-                            
+                            r_val += alignment * alignment_config.value.unwrap_or(0.1);
                         }
                     }
                 }
@@ -414,10 +451,10 @@ impl RustRewardCalculator {
 
             // 3. Penalties
             if step_penalty_config.use_step_penalty {
-                r_val -= step_penalty_config.value.unwrap_or(0.01); 
+                r_val -= step_penalty_config.value.unwrap_or(0.01);
             }
             if stop_penalty_config.use_stop_penalty && action == 0 {
-                r_val -= stop_penalty_config.value.unwrap_or(0.01); 
+                r_val -= stop_penalty_config.value.unwrap_or(0.01);
             }
 
             // 4. Env Reward
@@ -440,6 +477,6 @@ impl RustRewardCalculator {
 #[pymodule]
 fn rust_buffer(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<RustReplayBuffer>()?;
-    m.add_class::<RustRewardCalculator>()?; 
+    m.add_class::<RustRewardCalculator>()?;
     Ok(())
 }
