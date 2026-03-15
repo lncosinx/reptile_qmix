@@ -3,87 +3,8 @@ use numpy::PyArray1;
 use rand::Rng;
 use rand::seq::SliceRandom;
 use std::collections::VecDeque;
-use numpy::{ PyReadonlyArray1, PyReadonlyArray4};
+use numpy::{PyReadonlyArray1, PyReadonlyArray4};
 
-// Segment Tree implementation for Prioritized Replay Buffer
-struct SumTree {
-    capacity: usize,
-    tree: Vec<f32>,
-    data_pointer: usize,
-    n_entries: usize,
-}
-
-impl SumTree {
-    fn new(capacity: usize) -> Self {
-        SumTree {
-            capacity,
-            tree: vec![0.0; 2 * capacity - 1],
-            data_pointer: 0,
-            n_entries: 0,
-        }
-    }
-
-    // Iterative propagation to avoid recursion depth issues (though tree depth is log(N))
-    fn propagate_iter(&mut self, mut tree_index: usize, change: f32) {
-        while tree_index != 0 {
-            tree_index = (tree_index - 1) / 2;
-            self.tree[tree_index] += change;
-        }
-    }
-
-    fn update(&mut self, tree_index: usize, priority: f32) {
-        let change = priority - self.tree[tree_index];
-        self.tree[tree_index] = priority;
-        self.propagate_iter(tree_index, change);
-    }
-
-    fn add(&mut self, priority: f32) -> usize {
-        let tree_index = self.data_pointer + self.capacity - 1;
-
-        // We don't store data directly in the tree struct here,
-        // we just manage indices. The caller manages the data vector.
-
-        self.update(tree_index, priority);
-
-        let data_idx = self.data_pointer;
-        self.data_pointer += 1;
-        if self.data_pointer >= self.capacity {
-            self.data_pointer = 0;
-        }
-        if self.n_entries < self.capacity {
-            self.n_entries += 1;
-        }
-        data_idx
-    }
-
-    fn total(&self) -> f32 {
-        self.tree[0]
-    }
-
-    fn get_leaf(&self, mut s: f32) -> (usize, f32, usize) {
-        let mut parent_index = 0;
-        loop {
-            let left_child_index = 2 * parent_index + 1;
-            let right_child_index = left_child_index + 1;
-
-            if left_child_index >= self.tree.len() {
-                break;
-            }
-
-            if s <= self.tree[left_child_index] {
-                parent_index = left_child_index;
-            } else {
-                s -= self.tree[left_child_index];
-                parent_index = right_child_index;
-            }
-        }
-
-        let data_index = parent_index + 1 - self.capacity;
-        (parent_index, self.tree[parent_index], data_index)
-    }
-}
-
-// To optimize, we can store data as flattened vectors
 #[derive(Clone)]
 struct FlattenedEpisode {
     // We assume fixed shapes for an episode step, but variable length T
@@ -92,11 +13,13 @@ struct FlattenedEpisode {
     rewards: Vec<f32>,     // T * N
     next_states: Vec<f32>, // T * N * C * H * W
     dones: Vec<f32>,       // T * N (using f32 for convenience with tensor conversion)
+    global_map: Vec<f32>,  // C * H * W (single global map per episode)
 
     length: usize,
     // Prefix with _ to suppress unused warning
     _num_agents: usize,
     _obs_shape: (usize, usize, usize), // C, H, W
+    _global_map_shape: (usize, usize, usize), // C, H_g, W_g
 }
 
 impl FlattenedEpisode {
@@ -104,7 +27,8 @@ impl FlattenedEpisode {
         py: Python,
         episode_dict: &PyAny,
         num_agents: usize,
-        obs_shape: (usize, usize, usize)
+        obs_shape: (usize, usize, usize),
+        global_map_shape: (usize, usize, usize)
     ) -> PyResult<Self> {
         // Expecting dictionary with lists/arrays
         let states_list: Vec<PyObject> = episode_dict.get_item("states")?.extract()?;
@@ -112,6 +36,11 @@ impl FlattenedEpisode {
         let rewards_list: Vec<Vec<f32>> = episode_dict.get_item("rewards")?.extract()?;
         let next_states_list: Vec<PyObject> = episode_dict.get_item("next_states")?.extract()?;
         let dones_list: Vec<Vec<f32>> = episode_dict.get_item("dones")?.extract()?; // Bool or float? Assuming float for easier handling
+
+        let global_map_obj: PyObject = episode_dict.get_item("global_map")?.extract()?;
+        let global_map_arr: &numpy::PyArray3<f32> = global_map_obj.extract(py)?;
+        let global_map_slice = unsafe { global_map_arr.as_slice()? };
+        let global_map_flat = global_map_slice.to_vec();
 
         let length = states_list.len();
         let (c, h, w) = obs_shape;
@@ -143,9 +72,11 @@ impl FlattenedEpisode {
             rewards: rewards_flat,
             next_states: next_states_flat,
             dones: dones_flat,
+            global_map: global_map_flat,
             length,
             _num_agents: num_agents,
             _obs_shape: obs_shape,
+            _global_map_shape: global_map_shape,
         })
     }
 }
@@ -156,18 +87,20 @@ struct RustReplayBuffer {
     seq_len: usize,
     num_agents: usize,
     obs_shape: (usize, usize, usize),
+    global_map_shape: (usize, usize, usize),
     buffer: VecDeque<FlattenedEpisode>,
 }
 
 #[pymethods]
 impl RustReplayBuffer {
     #[new]
-    fn new(capacity: usize, seq_len: usize, num_agents: usize, obs_shape: (usize, usize, usize)) -> Self {
+    fn new(capacity: usize, seq_len: usize, num_agents: usize, obs_shape: (usize, usize, usize), global_map_shape: (usize, usize, usize)) -> Self {
         RustReplayBuffer {
             capacity,
             seq_len,
             num_agents,
             obs_shape,
+            global_map_shape,
             buffer: VecDeque::with_capacity(capacity),
         }
     }
@@ -176,7 +109,7 @@ impl RustReplayBuffer {
         if self.buffer.len() >= self.capacity {
             self.buffer.pop_front();
         }
-        let episode = FlattenedEpisode::from_py(py, episode_data, self.num_agents, self.obs_shape)?;
+        let episode = FlattenedEpisode::from_py(py, episode_data, self.num_agents, self.obs_shape, self.global_map_shape)?;
         self.buffer.push_back(episode);
         Ok(())
     }
@@ -208,8 +141,10 @@ impl RustReplayBuffer {
         let (c, h, w) = self.obs_shape;
         let n = self.num_agents;
         let t = self.seq_len;
+        let (gc, gh, gw) = self.global_map_shape;
 
         let obs_dim = n * c * h * w;
+        let global_map_dim = gc * gh * gw;
 
         // Pre-allocate flat vectors for the batch
         let mut batch_states = vec![0.0; batch_size * t * obs_dim];
@@ -217,6 +152,7 @@ impl RustReplayBuffer {
         let mut batch_actions = vec![0i64; batch_size * t * n];
         let mut batch_rewards = vec![0.0; batch_size * t * n];
         let mut batch_dones = vec![0.0; batch_size * t * n];
+        let mut batch_global_maps = vec![0.0; batch_size * global_map_dim];
 
         let mut rng = rand::thread_rng();
 
@@ -234,6 +170,7 @@ impl RustReplayBuffer {
             // Calculate offsets
             let batch_state_offset = i * t * obs_dim;
             let batch_action_offset = i * t * n;
+            let batch_global_map_offset = i * global_map_dim;
 
             let ep_state_start = start_idx * obs_dim;
             let ep_state_end = end_idx * obs_dim;
@@ -257,6 +194,9 @@ impl RustReplayBuffer {
             batch_dones[batch_action_offset .. batch_action_offset + actual_len * n]
                 .copy_from_slice(&episode.dones[ep_action_start..ep_action_end]);
 
+            batch_global_maps[batch_global_map_offset .. batch_global_map_offset + global_map_dim]
+                .copy_from_slice(&episode.global_map[0..global_map_dim]);
+
             // Zero-padding is implicit since we initialized with 0.0/0
             // If actual_len < t, the rest remains 0
         }
@@ -265,15 +205,18 @@ impl RustReplayBuffer {
         // PyTorch expects:
         // States: (B, T, N, C, H, W)
         // Actions: (B, T, N)
+        // global_maps: (B, C, H_g, W_g)
 
         let states_shape = (batch_size, t, n, c, h, w);
         let actions_shape = (batch_size, t, n);
+        let global_maps_shape = (batch_size, gc, gh, gw);
 
         let np_states = PyArray1::from_vec(py, batch_states).reshape(states_shape)?;
         let np_next_states = PyArray1::from_vec(py, batch_next_states).reshape(states_shape)?;
         let np_actions = PyArray1::from_vec(py, batch_actions).reshape(actions_shape)?;
         let np_rewards = PyArray1::from_vec(py, batch_rewards).reshape(actions_shape)?;
         let np_dones = PyArray1::from_vec(py, batch_dones).reshape(actions_shape)?;
+        let np_global_maps = PyArray1::from_vec(py, batch_global_maps).reshape(global_maps_shape)?;
 
         let dict = pyo3::types::PyDict::new(py);
         dict.set_item("states", np_states)?;
@@ -281,227 +224,12 @@ impl RustReplayBuffer {
         dict.set_item("actions", np_actions)?;
         dict.set_item("rewards", np_rewards)?;
         dict.set_item("dones", np_dones)?;
+        dict.set_item("global_maps", np_global_maps)?;
 
         Ok(dict.into())
     }
 }
 
-#[pyclass]
-struct RustPrioritizedReplayBuffer {
-    capacity: usize,
-    seq_len: usize,
-    num_agents: usize,
-    obs_shape: (usize, usize, usize),
-    buffer: Vec<Option<FlattenedEpisode>>, // Fixed size vec for ring buffer
-    tree: SumTree,
-    alpha: f32,
-    beta: f32,
-    beta_increment: f32,
-    epsilon: f32,
-    max_priority: f32,
-    beta_start: f32,
-}
-
-#[pymethods]
-impl RustPrioritizedReplayBuffer {
-    #[new]
-    fn new(
-        capacity: usize,
-        seq_len: usize,
-        num_agents: usize,
-        obs_shape: (usize, usize, usize),
-        alpha: f32,
-        beta_start: f32,
-        beta_frames: usize
-    ) -> Self {
-        RustPrioritizedReplayBuffer {
-            capacity,
-            seq_len,
-            num_agents,
-            obs_shape,
-            buffer: vec![None; capacity],
-            tree: SumTree::new(capacity),
-            alpha,
-            beta: beta_start,
-            beta_increment: (1.0 - beta_start) / (beta_frames as f32),
-            epsilon: 0.01,
-            max_priority: 1.0,
-            beta_start,
-        }
-    }
-
-    fn push(&mut self, py: Python, episode_data: &PyAny) -> PyResult<()> {
-        let episode = FlattenedEpisode::from_py(py, episode_data, self.num_agents, self.obs_shape)?;
-
-        let idx = self.tree.add(self.max_priority);
-        self.buffer[idx] = Some(episode);
-
-        Ok(())
-    }
-
-    fn len(&self) -> usize {
-        self.tree.n_entries
-    }
-
-    fn clear(&mut self) {
-        // Reset tree
-        self.tree = SumTree::new(self.capacity);
-
-        // Reset buffer - but keep capacity allocation if possible?
-        // Vec<Option<T>> reset involves setting all to None? Or just recreating?
-        // Recreating is safer/simpler for now.
-        self.buffer = vec![None; self.capacity];
-
-        // Reset PER parameters if desired?
-        // Usually beta increases during training, but if we clear for a new task,
-        // we might want to keep current beta or reset it.
-        // Reptile logic usually resets agent for new task, so buffer is fresh.
-        // Let's assuming parameters are managed by caller or persistent.
-        // But we MUST reset max_priority to ensure new samples get picked.
-        self.max_priority = 1.0;
-        //Reset beta
-        self.beta = self.beta_start;
-    }
-
-    fn sample<'py>(&mut self, py: Python<'py>, batch_size: usize) -> PyResult<&'py PyAny> {
-        if self.tree.n_entries == 0 {
-            return Ok(py.None().into_ref(py));
-        }
-
-        let mut indices = Vec::with_capacity(batch_size);
-        let mut tree_indices = Vec::with_capacity(batch_size);
-        let mut priorities = Vec::with_capacity(batch_size);
-
-        let total_p = self.tree.total();
-        let segment = total_p / (batch_size as f32);
-
-        let mut rng = rand::thread_rng();
-
-        for i in 0..batch_size {
-            let a = segment * (i as f32);
-            let b = segment * ((i + 1) as f32);
-            let s = rng.gen_range(a..b);
-
-            let (tree_idx, p, data_idx) = self.tree.get_leaf(s);
-
-            // Safety check if data actually exists
-            if self.buffer[data_idx].is_none() {
-                // This shouldn't happen if logic is correct
-                continue;
-            }
-
-            indices.push(data_idx);
-            tree_indices.push(tree_idx);
-            priorities.push(p);
-        }
-
-        let real_batch_size = indices.len();
-
-        // Calculate IS weights
-        let n = self.tree.n_entries as f32;
-        let mut weights = Vec::with_capacity(real_batch_size);
-        let mut max_w: f32 = 0.0;
-
-        for &p in &priorities {
-            let prob = p / total_p;
-            let w = (n * prob).powf(-self.beta);
-            weights.push(w);
-            if w > max_w { max_w = w; }
-        }
-
-        for w in &mut weights {
-            *w /= max_w;
-        }
-
-        // Anneal beta
-        self.beta = (self.beta + self.beta_increment).min(1.0);
-
-        // Construct batch data
-        // Need to expose inner _construct_batch logic or replicate it
-        // For simplicity, replicate (or refactor into shared function if in same module)
-
-        // Note: _construct_batch logic is identical to ReplayBuffer but using `indices` into `self.buffer`
-        // However, self.buffer here is Vec<Option>, there it was VecDeque.
-        // Let's implement it inline for now.
-
-        let (c, h, w) = self.obs_shape;
-        let n_agents = self.num_agents;
-        let t = self.seq_len;
-        let obs_dim = n_agents * c * h * w;
-
-        let mut batch_states = vec![0.0; real_batch_size * t * obs_dim];
-        let mut batch_next_states = vec![0.0; real_batch_size * t * obs_dim];
-        let mut batch_actions = vec![0i64; real_batch_size * t * n_agents];
-        let mut batch_rewards = vec![0.0; real_batch_size * t * n_agents];
-        let mut batch_dones = vec![0.0; real_batch_size * t * n_agents];
-
-        for (i, &idx) in indices.iter().enumerate() {
-            let episode = self.buffer[idx].as_ref().unwrap();
-
-            let max_start = if episode.length > t { episode.length - t } else { 0 };
-            let start_idx = rng.gen_range(0..=max_start);
-            let end_idx = std::cmp::min(start_idx + t, episode.length);
-            let actual_len = end_idx - start_idx;
-
-            let batch_state_offset = i * t * obs_dim;
-            let batch_action_offset = i * t * n_agents;
-
-            let ep_state_start = start_idx * obs_dim;
-            let ep_state_end = end_idx * obs_dim;
-
-            let ep_action_start = start_idx * n_agents;
-            let ep_action_end = end_idx * n_agents;
-
-            batch_states[batch_state_offset .. batch_state_offset + actual_len * obs_dim]
-                .copy_from_slice(&episode.states[ep_state_start..ep_state_end]);
-
-            batch_next_states[batch_state_offset .. batch_state_offset + actual_len * obs_dim]
-                .copy_from_slice(&episode.next_states[ep_state_start..ep_state_end]);
-
-            batch_actions[batch_action_offset .. batch_action_offset + actual_len * n_agents]
-                .copy_from_slice(&episode.actions[ep_action_start..ep_action_end]);
-
-            batch_rewards[batch_action_offset .. batch_action_offset + actual_len * n_agents]
-                .copy_from_slice(&episode.rewards[ep_action_start..ep_action_end]);
-
-            batch_dones[batch_action_offset .. batch_action_offset + actual_len * n_agents]
-                .copy_from_slice(&episode.dones[ep_action_start..ep_action_end]);
-        }
-
-        let states_shape = (real_batch_size, t, n_agents, c, h, w);
-        let actions_shape = (real_batch_size, t, n_agents);
-
-        let np_states = PyArray1::from_vec(py, batch_states).reshape(states_shape)?;
-        let np_next_states = PyArray1::from_vec(py, batch_next_states).reshape(states_shape)?;
-        let np_actions = PyArray1::from_vec(py, batch_actions).reshape(actions_shape)?;
-        let np_rewards = PyArray1::from_vec(py, batch_rewards).reshape(actions_shape)?;
-        let np_dones = PyArray1::from_vec(py, batch_dones).reshape(actions_shape)?;
-        let np_weights = PyArray1::from_vec(py, weights);
-        let np_indices = PyArray1::from_vec(py, tree_indices);
-
-        let dict = pyo3::types::PyDict::new(py);
-        dict.set_item("data", {
-            let d = pyo3::types::PyDict::new(py);
-            d.set_item("states", np_states)?;
-            d.set_item("next_states", np_next_states)?;
-            d.set_item("actions", np_actions)?;
-            d.set_item("rewards", np_rewards)?;
-            d.set_item("dones", np_dones)?;
-            d
-        })?;
-        dict.set_item("indices", np_indices)?;
-        dict.set_item("weights", np_weights)?;
-
-        Ok(dict.into())
-    }
-
-    fn update_priorities(&mut self, tree_indices: Vec<usize>, td_errors: Vec<f32>) {
-        for (idx, err) in tree_indices.into_iter().zip(td_errors.into_iter()) {
-            let priority = (err.abs() + self.epsilon).powf(self.alpha).min(self.max_priority).max(0.001);
-            self.tree.update(idx, priority);
-        }
-    }
-}
 
 // ---------------- Reward Calculator with Next Obs Check ----------------
 
@@ -708,7 +436,6 @@ impl RustRewardCalculator {
 #[pymodule]
 fn module_set_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<RustReplayBuffer>()?;
-    m.add_class::<RustPrioritizedReplayBuffer>()?;
     m.add_class::<RustRewardCalculator>()?; 
     Ok(())
 }
