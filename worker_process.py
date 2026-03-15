@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from env_wrapper import PogemaWrapper
 from agent_trainer import AgentTrainer
-from rust_buffer import RustReplayBuffer
+from rust_buffer import RustReplayBuffer, RustRewardCalculator
 
 # Note: POGEMA needs to be imported to register the environment, but we'll mock it if not present
 try:
@@ -55,8 +55,10 @@ def run_worker_task(worker_id, global_state_dict, config):
     trainer.target_mixer.load_state_dict(global_state_dict['mixer'])
 
     # Initialize Environment
-    raw_env = gym.make(env_name)
+    raw_env = gym.make(env_name, on_target='finish')
     env = PogemaWrapper(raw_env)
+
+    reward_calculator = RustRewardCalculator(num_agents)
 
     # Extract map shapes by doing a dummy reset
     obs, info = env.reset()
@@ -95,12 +97,15 @@ def run_worker_task(worker_id, global_state_dict, config):
         step = 0
         max_steps = config.get('max_steps', 200)
 
+        # 在 while 循环上方初始化
+        dones = [False] * env.num_agents
+
         while not done and step < max_steps:
             # Select actions (Decentralized Execution)
             actions, next_hidden_state = trainer.select_actions(obs, hidden_state, epsilon=config.get('epsilon', 0.1))
 
             # 强制接管已完成智能体的动作
-            for i in range(env.get_num_agents()):
+            for i in range(env.num_agents):
                 if dones[i]:
                     actions[i] = 0  # 强制设为 0 (Stay) 操作，避免触发 Rust 端的撞墙惩罚
 
@@ -109,6 +114,18 @@ def run_worker_task(worker_id, global_state_dict, config):
 
             # Format outputs
             next_obs = np.array(next_obs, dtype=np.float32)
+
+            rewards = reward_calculator.calculate(
+            rewards=np.array(rewards, dtype=np.float32),
+            obs=np.array(obs, dtype=np.float32),
+            next_obs=next_obs,
+            actions=np.array(actions, dtype=np.int64),
+            # 传入在 Rust 中定义的 Config
+            alignment_config={"use_alignment": True, "value": 0.1},
+            stop_penalty_config={"use_stop_penalty": True, "value": 0.01},
+            step_penalty_config={"use_step_penalty": True, "value": 0.01},
+            goal_reward_multiple=50.0
+            )
 
             # Cache step data locally in Python wrapper
             env.cache_step(obs, actions, rewards, next_obs, dones)
@@ -147,6 +164,8 @@ def run_worker_task(worker_id, global_state_dict, config):
                 batch = buffer.sample(batch_size)
                 loss = trainer.train_step(batch, gamma=config.get('gamma', 0.99))
                 total_loss += loss
+            # 释放由 TBPTT 动态图产生的显存碎片
+            torch.cuda.empty_cache()
 
     # 3. Compute Parameter Differences: \Delta = \theta_{task} - \theta_{global}
     # This prevents sending huge absolute weights back and saves IPC overhead.
