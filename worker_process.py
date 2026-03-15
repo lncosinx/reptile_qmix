@@ -177,8 +177,6 @@ def run_worker_task(worker_id, global_state_dict, config):
             # Select actions (Decentralized Execution)
             actions, next_hidden_state = trainer.select_actions(obs, hidden_state, epsilon=config.get('epsilon', 0.1))
 
-            native_arrivals += sum(env_rewards)
-
             # 强制接管已完成智能体的动作
             for i in range(env.num_agents):
                 if dones[i]:
@@ -186,6 +184,8 @@ def run_worker_task(worker_id, global_state_dict, config):
 
             # Step environment
             next_obs, rewards, dones, truncated, infos = env.step(actions)
+
+            native_arrivals += sum(rewards)
 
             # Format outputs
             next_obs = np.array(next_obs, dtype=np.float32)
