@@ -158,7 +158,7 @@ class AgentTrainer:
         q_evals = []
         q_targets = []
 
-        for t in range(burn_in_len, T):
+        for t in range(burn_in, T):
             # Reshape observations
             obs_t = states[:, t].view(B * N, C, H, W)
             next_obs_t = next_states[:, t].view(B * N, C, H, W)
