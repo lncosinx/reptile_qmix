@@ -1,15 +1,71 @@
 import torch
 import numpy as np
-from env_wrapper import PogemaWrapper
+import gymnasium as gym
+import random
+from pogema import pogema_v0, GridConfig  
+from pogema_toolbox.generators.maze_generator import MazeGenerator
+from pogema_toolbox.generators.random_generator import generate_map as generate_random_map
+from pogema_toolbox.generators.house_generator import HouseGenerator
+from pogema_toolbox.generators.warehouse_generator import generate_wfi_warehouse, WarehouseConfig
+from env_wrapper import NativePogemaWrapper
 from agent_trainer import AgentTrainer
 from rust_buffer import RustReplayBuffer, RustRewardCalculator
 
-# Note: POGEMA needs to be imported to register the environment, but we'll mock it if not present
-try:
-    import pogema
-    import gymnasium as gym
-except ImportError:
-    pass
+def get_generated_map_grid(difficulty_ratio, map_type_config=None, seed=None):
+    if seed is None:
+        seed = random.randint(0, 10_000)
+    
+    # ================= 1. 尺寸控制：改为线性 =================
+    min_size = 15
+    max_size = 25
+    
+    # 这样模型有充足的时间适应中等大小的地图
+    adjusted_ratio = difficulty_ratio 
+    
+    current_size = int(min_size + (max_size - min_size) * adjusted_ratio)
+    
+    width = random.randint(max(6, current_size - 2), current_size + 2)
+    height = random.randint(max(6, current_size - 2), current_size + 2)
+
+    # ================= 2. 步数控制 =================
+    max_episode_steps = 128 
+    # ================= 3. 地图类型控制 =================    
+    weights = [0.27, 0.05, 0.33, 0.35] 
+    map_type = random.choices(['random', 'warehouse', 'house', 'maze'], weights=weights, k=1)[0]
+        
+    #测试指定地图类型
+    map_type = map_type_config if map_type_config is not None else map_type
+    # 这里的代码需要补全之前的逻辑
+    map_str = ""
+    if map_type == 'maze':
+        map_str = MazeGenerator.generate_maze(width=width, 
+                                              height=height, 
+                                              obstacle_density=random.uniform(0.2, 0.4), 
+                                              wall_components=random.randint(2, 8), 
+                                              go_straight=random.uniform(0.7, 0.9), 
+                                              seed=seed)
+    elif map_type == 'random':
+        map_str = generate_random_map({"width": width, 
+                                       "height": height, 
+                                       "obstacle_density": 0.2 + (0.2 * difficulty_ratio), 
+                                       "seed": seed})
+    elif map_type == 'house':
+         map_str = HouseGenerator.generate(width=width, 
+                                           height=height, 
+                                           obstacle_ratio=random.randint(4, 6), 
+                                           remove_edge_ratio=random.randint(4, 8), 
+                                           seed=seed)
+    elif map_type == 'warehouse':
+        cfg = WarehouseConfig(wall_width=random.randint(3, 6), 
+                              wall_height=random.randint(2, 3), 
+                              walls_in_row=random.randint(2, 4), 
+                              walls_rows=random.randint(2, 4), 
+                              bottom_gap=random.randint(1, 3), 
+                              horizontal_gap=random.randint(1, 2), 
+                              vertical_gap=random.randint(2, 3))
+        map_str = generate_wfi_warehouse(cfg)
+
+    return map_str, map_type, seed, max_episode_steps
 
 def run_worker_task(worker_id, global_state_dict, config):
     """
@@ -53,10 +109,25 @@ def run_worker_task(worker_id, global_state_dict, config):
     trainer.target_drqn.load_state_dict(global_state_dict['drqn'])
     trainer.target_map_encoder.load_state_dict(global_state_dict['map_encoder'])
     trainer.target_mixer.load_state_dict(global_state_dict['mixer'])
+    progress = config.get('curr_progress', 0.0)
 
     # Initialize Environment
-    raw_env = gym.make(env_name, on_target='finish')
-    env = PogemaWrapper(raw_env)
+    # 1. 动态生成一张地图的字符串（你可以根据课程学习的进度动态调整 difficulty_ratio）
+    map_str, map_type, seed, max_episode_steps = get_generated_map_grid(difficulty_ratio=progress)
+
+    # 2. 将地图字符串注入到 Pogema 的 GridConfig 中
+    grid_config = GridConfig(
+        map=map_str,
+        num_agents=num_agents,                  # 必须与你设定的智能体数量一致
+        observation_radius=5,          # 视野范围
+        on_target='finish',            # 到达目标后的行为
+        max_episode_steps=max_episode_steps,
+        seed=seed
+    )
+
+    # 3. 使用核心基础名称 "Pogema-v0" 结合 grid_config 创建环境，彻底摆脱静态名称限制
+    raw_env = pogema_v0(grid_config=grid_config)
+    env = NativePogemaWrapper(raw_env, num_agents)
 
     reward_calculator = RustRewardCalculator(num_agents)
 
@@ -124,7 +195,7 @@ def run_worker_task(worker_id, global_state_dict, config):
             alignment_config={"use_alignment": True, "value": 0.1},
             stop_penalty_config={"use_stop_penalty": True, "value": 0.01},
             step_penalty_config={"use_step_penalty": True, "value": 0.01},
-            goal_reward_multiple=50.0
+            goal_reward_multiple=100.0
             )
 
             # Cache step data locally in Python wrapper

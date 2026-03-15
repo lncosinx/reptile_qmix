@@ -28,20 +28,20 @@ if __name__ == '__main__':
     # 1. Configuration and Hyperparameters
     # -------------------------------------------------------------
     config = {
-        'num_workers': 4,
-        'meta_iterations': 1000,
+        'num_workers': 8,
+        'meta_iterations': 6400,
         'alpha_meta': 0.1,          # Meta-learning rate
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
 
         # Network & Env Hyperparameters
         'num_agents': 8,
-        'obs_channels': 4,          # e.g., Agent, Target, Obstacles, Other Agents
+        'obs_channels': 3,          # e.g., Agent, Target, Obstacles, Other Agents
         'map_channels': 1,          # Static Map usually has 1 channel (Obstacles)
         'num_actions': 5,           # Up, Down, Left, Right, Stay
         'hidden_dim': 128,
 
         # Inner-loop Hyperparameters
-        'inner_epochs': 64,
+        'inner_epochs': 128,
         'batch_size': 32,
         'seq_len': 120,             # For TBPTT Burn-in and Learn phases
         'buffer_capacity': 1000,
@@ -79,6 +79,12 @@ if __name__ == '__main__':
     # Setup Pool outside the training loop to avoid huge overhead of recreating processes
     with mp.Pool(processes=config['num_workers']) as pool:
         for meta_iter in range(config['meta_iterations']):
+            
+            # 计算当前课程学习的进度 (0.0 到 1.0 之间)
+            if config['meta_iterations'] > 1:
+                config['curr_progress'] = meta_iter / (config['meta_iterations'] - 1)
+            else:
+                config['curr_progress'] = 1.0
 
             # Snapshot the current global weights to send to workers
             # We move them to CPU before pickling to save GPU VRAM and IPC overhead

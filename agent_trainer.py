@@ -9,7 +9,9 @@ class AgentTrainer:
         self.device = device
         self.num_actions = num_actions
         self.num_agents = num_agents
-
+        self.use_scaler = torch.cuda.is_available()
+        # self.scaler = torch.cuda.amp.GradScaler(enabled=self.use_scaler) #由于cuda版本问题，cuda版本较新时，请注释此行，恢复下行
+        self.scaler = torch.amp.GradScaler('cuda', enabled=self.use_scaler) 
         # -------------------------------------------------------------
         # 1. Initialize Networks (Eval and Target for Double Q-learning)
         # -------------------------------------------------------------
@@ -112,7 +114,7 @@ class AgentTrainer:
         # 在 agent_trainer.py 的 train_step 方法中：
         # 假设 batch['masks'] 的 shape 是 (B, Seq_len, N)
         # 获取这个 batch 中真实的最大有效长度 (非 0 元素的数量)
-        valid_steps = batch['masks'].sum(dim=1).max().int().item()
+        valid_steps = masks.sum(dim=1).max().int().item()
         
         B, T, N, C, H, W = states.shape
 
@@ -129,11 +131,12 @@ class AgentTrainer:
         # -------------------------------------------------------------
         # STRICT REQUIREMENT: Prevent VRAM OOM on RTX 4090 by using torch.no_grad().
         # We only pass data through DRQN to update the LSTM hidden states without saving the graph.
-        with torch.no_grad():
+        # with torch.no_grad(), torch.cuda.amp.autocast(enabled=self.use_scaler):   #由于cuda版本问题，cuda版本较新时，请注释此行，恢复下行
+        with torch.no_grad(), torch.amp.autocast('cuda', enabled=self.use_scaler):
             for t in range(burn_in):
                 # Reshape states to (B*N, C, H, W)
-                obs_t = states[:, t].view(B * N, C, H, W)
-                next_obs_t = next_states[:, t].view(B * N, C, H, W)
+                obs_t = states[:, t].reshape(B * N, C, H, W)
+                next_obs_t = next_states[:, t].reshape(B * N, C, H, W)
 
                 # Forward pass to update hidden states
                 _, _, eval_hidden = self.eval_drqn(obs_t, eval_hidden)
@@ -149,99 +152,118 @@ class AgentTrainer:
         # -------------------------------------------------------------
         # Get Map Token from Eval MapEncoder
         # global_maps shape: (B, C_g, H_g, W_g)
-        eval_map_token = self.eval_map_encoder(global_maps) # (B, 1, hidden_dim)
+        # with torch.cuda.amp.autocast(enabled=self.use_scaler):   #由于cuda版本问题，cuda版本较新时，请注释此行，恢复下行
+        with torch.amp.autocast('cuda', enabled=self.use_scaler):
+            eval_map_token = self.eval_map_encoder(global_maps) # (B, 1, hidden_dim)
 
-        with torch.no_grad():
-            target_map_token = self.target_map_encoder(global_maps) # (B, 1, hidden_dim)
-
-        # Lists to store Q-values and hidden states for the learning phase
-        q_evals = []
-        q_targets = []
-
-        for t in range(burn_in, T):
-            # Reshape observations
-            obs_t = states[:, t].view(B * N, C, H, W)
-            next_obs_t = next_states[:, t].view(B * N, C, H, W)
-
-            # Forward DRQN (Eval)
-            # Output: q_vals (B*N, num_actions), h_i (B*N, hidden_dim)
-            q_eval_t, h_i_eval, eval_hidden = self.eval_drqn(obs_t, eval_hidden)
-
-            # Select the Q-value corresponding to the action actually taken
-            action_t = actions[:, t].view(B * N, 1) # (B*N, 1)
-            chosen_q_eval = q_eval_t.gather(1, action_t).squeeze(-1) # (B*N,)
-
-            # Reshape outputs to (B, N, ...) for TransformerMixer
-            chosen_q_eval = chosen_q_eval.view(B, N) # (B, N)
-            h_i_eval = h_i_eval.view(B, N, -1)       # (B, N, hidden_dim)
-
-            # Forward TransformerMixer (Eval) to get Q_tot
-            # Pass map_token, h_i, q_i, and dones
-            dones_t = dones[:, t] # (B, N)
-            q_tot_eval = self.eval_mixer(eval_map_token, h_i_eval, chosen_q_eval, dones_t) # (B,)
-            q_evals.append(q_tot_eval)
-
-            # --- Double Q-Learning Target Calculation ---
             with torch.no_grad():
-                # 1. Use Eval network to select the BEST next action
-                next_q_eval_t, _, _ = self.eval_drqn(next_obs_t, eval_hidden) # (B*N, num_actions)
-                best_next_actions = torch.argmax(next_q_eval_t, dim=1).unsqueeze(-1) # (B*N, 1)
+                target_map_token = self.target_map_encoder(global_maps) # (B, 1, hidden_dim)
 
-                # 2. Use Target network to evaluate that action
-                q_target_t, h_i_target, target_hidden = self.target_drqn(next_obs_t, target_hidden)
-                chosen_q_target = q_target_t.gather(1, best_next_actions).squeeze(-1) # (B*N,)
+            # Lists to store Q-values and hidden states for the learning phase
+            q_evals = []
+            q_targets = []
 
-                # Reshape for Mixer
-                chosen_q_target = chosen_q_target.view(B, N)
-                h_i_target = h_i_target.view(B, N, -1)
+            for t in range(burn_in, T):
+                # Reshape observations
+                obs_t = states[:, t].reshape(B * N, C, H, W)
+                next_obs_t = next_states[:, t].reshape(B * N, C, H, W)
 
-                # Mixer (Target)
-                # Next state dones (for target masking).
-                # Note: if the state was already done at t, it remains done.
-                q_tot_target = self.target_mixer(target_map_token, h_i_target, chosen_q_target, dones_t) # (B,)
+                # Forward DRQN (Eval)
+                # Output: q_vals (B*N, num_actions), h_i (B*N, hidden_dim)
+                q_eval_t, h_i_eval, eval_hidden = self.eval_drqn(obs_t, eval_hidden)
 
-                # Calculate TD Target: R_tot + gamma * Q_tot_target (if not fully done)
-                # Here we sum the rewards across agents for the centralized Q_tot
-                reward_tot_t = rewards[:, t].sum(dim=1) # (B,)
+                # Select the Q-value corresponding to the action actually taken
+                action_t = actions[:, t].reshape(B * N, 1) # (B*N, 1)
+                chosen_q_eval = q_eval_t.gather(1, action_t).squeeze(-1) # (B*N,)
 
-                # If all agents are done, no future reward
-                all_done_t = torch.all(dones_t == 1, dim=1).float() # (B,)
+                # Reshape outputs to (B, N, ...) for TransformerMixer
+                chosen_q_eval = chosen_q_eval.view(B, N) # (B, N)
+                h_i_eval = h_i_eval.view(B, N, -1)       # (B, N, hidden_dim)
 
-                td_target = reward_tot_t + gamma * (1 - all_done_t) * q_tot_target
-                q_targets.append(td_target)
+                # Forward TransformerMixer (Eval) to get Q_tot
+                # Pass map_token, h_i, q_i, and dones
+                dones_t = dones[:, t] # (B, N)
+                q_tot_eval = self.eval_mixer(eval_map_token, h_i_eval, chosen_q_eval, dones_t) # (B,)
+                q_evals.append(q_tot_eval)
 
-        # -------------------------------------------------------------
-        # 4. Compute Loss and Backpropagate
-        # -------------------------------------------------------------
-        # Stack sequences along time dimension: (B, learn_len)
-        q_evals = torch.stack(q_evals, dim=1)
-        q_targets = torch.stack(q_targets, dim=1)
+                # --- Double Q-Learning Target Calculation ---
+                with torch.no_grad():
+                    # 1. Use Eval network to select the BEST next action
+                    next_q_eval_t, _, _ = self.eval_drqn(next_obs_t, eval_hidden) # (B*N, num_actions)
+                    best_next_actions = torch.argmax(next_q_eval_t, dim=1).unsqueeze(-1) # (B*N, 1)
 
-        # 截取 Learn 阶段的 masks
-        learn_masks = masks[:, burn_in:]
+                    # 2. Use Target network to evaluate that action
+                    q_target_t, h_i_target, target_hidden = self.target_drqn(next_obs_t, target_hidden)
+                    chosen_q_target = q_target_t.gather(1, best_next_actions).squeeze(-1) # (B*N,)
 
-        # 使用 Masked MSE Loss
-        # F.mse_loss(reduction='none') 会返回每个元素的独立 loss，形状为 (B, learn_len)
-        element_wise_loss = F.mse_loss(q_evals, q_targets.detach(), reduction='none')
-        
-        # 掩码相乘，把 padding 的 garbage 产生的 loss 归零
-        masked_loss = element_wise_loss * learn_masks
-        
-        # 求平均时，只能除以有效的 step 数量，用 clamp 防止除以 0
-        loss = masked_loss.sum() / learn_masks.sum().clamp(min=1.0)
+                    # Reshape for Mixer
+                    chosen_q_target = chosen_q_target.view(B, N)
+                    h_i_target = h_i_target.view(B, N, -1)
+
+                    # Mixer (Target)
+                    # Next state dones (for target masking).
+                    # Note: if the state was already done at t, it remains done.
+                    q_tot_target = self.target_mixer(target_map_token, h_i_target, chosen_q_target, dones_t) # (B,)
+
+                    # Calculate TD Target: R_tot + gamma * Q_tot_target (if not fully done)
+                    # Here we sum the rewards across agents for the centralized Q_tot
+                    reward_tot_t = rewards[:, t].sum(dim=1) # (B,)
+
+                    # If all agents are done, no future reward
+                    all_done_t = torch.all(dones_t == 1, dim=1).float() # (B,)
+
+                    td_target = reward_tot_t + gamma * (1 - all_done_t) * q_tot_target
+                    q_targets.append(td_target)
+
+            # -------------------------------------------------------------
+            # 4. Compute Loss and Backpropagate
+            # -------------------------------------------------------------
+            # Stack sequences along time dimension: (B, learn_len)
+            q_evals = torch.stack(q_evals, dim=1)
+            q_targets = torch.stack(q_targets, dim=1)
+
+            # 截取 Learn 阶段的 masks
+            learn_masks = masks[:, burn_in:]
+
+            # 使用 Masked MSE Loss
+            # F.mse_loss(reduction='none') 会返回每个元素的独立 loss，形状为 (B, learn_len)
+            element_wise_loss = F.mse_loss(q_evals, q_targets.detach(), reduction='none')
+            
+            # 掩码相乘，把 padding 的 garbage 产生的 loss 归零
+            masked_loss = element_wise_loss * learn_masks
+            
+            # 求平均时，只能除以有效的 step 数量，用 clamp 防止除以 0
+            loss = masked_loss.sum() / learn_masks.sum().clamp(min=1.0)
 
         # Optimize
         self.optimizer.zero_grad()
-        loss.backward()
-
-        # Gradient clipping to prevent exploding gradients in LSTMs/Transformers
-        torch.nn.utils.clip_grad_norm_(
-            list(self.eval_drqn.parameters()) +
-            list(self.eval_map_encoder.parameters()) +
-            list(self.eval_mixer.parameters()),
-            max_norm=10.0
-        )
-        self.optimizer.step()
+        # 使用 Scaler 接管反向传播
+        if self.use_amp and self.scaler is not None:
+            # 1. 放缩 Loss 并反向传播
+            self.scaler.scale(loss).backward()
+            
+            # 2. 关键！在裁剪梯度前必须先 unscale，否则裁剪阈值就错了
+            self.scaler.unscale_(self.optimizer)
+            torch.nn.utils.clip_grad_norm_(
+                list(self.eval_drqn.parameters()) +
+                list(self.eval_map_encoder.parameters()) +
+                list(self.eval_mixer.parameters()),
+                max_norm=10.0
+            )
+            
+            # 3. 步进优化器并更新 Scaler
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+        else:
+            # 兼容不使用 AMP 的情况
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(
+                list(self.eval_drqn.parameters()) +
+                list(self.eval_map_encoder.parameters()) +
+                list(self.eval_mixer.parameters()),
+                max_norm=10.0
+            )
+            self.optimizer.step()
 
         # Soft update target networks
         self.update_target_networks()
