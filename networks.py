@@ -48,7 +48,7 @@ class StaticMapEncoder(nn.Module):
             nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
         )
-        self.pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.pool = nn.AdaptiveMaxPool2d((1, 1))
         self.fc = nn.Linear(128, hidden_dim)
 
     def forward(self, global_map):
@@ -130,8 +130,12 @@ class TransformerMixer(nn.Module):
         s_global = out_seq[:, 0, :] # (B, hidden_dim)
 
         # 4. QMIX-like Non-linear Mixing
+        
+        # dones 值为 1 表示已到达终点，因此 (1 - dones) 为有效掩码
+        q_i_masked = q_i * (1.0 - dones)
+
         # Ensure q_i is reshaped for batched matrix multiplication: (B, 1, N)
-        q_i_reshaped = q_i.view(B, 1, N)
+        q_i_reshaped = q_i_masked.view(B, 1, N)
 
         # W1: Absolute values to ensure non-negative weights
         w1 = torch.abs(self.hyper_w1(s_global))
