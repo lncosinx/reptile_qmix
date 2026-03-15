@@ -1,0 +1,232 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+from networks import SharedDRQN, StaticMapEncoder, TransformerMixer
+
+class AgentTrainer:
+    def __init__(self, obs_channels, num_actions, map_channels, num_agents, device='cuda', lr=1e-4):
+        self.device = device
+        self.num_actions = num_actions
+        self.num_agents = num_agents
+
+        # -------------------------------------------------------------
+        # 1. Initialize Networks (Eval and Target for Double Q-learning)
+        # -------------------------------------------------------------
+
+        # Eval Networks
+        self.eval_drqn = SharedDRQN(obs_channels, num_actions).to(self.device)
+        self.eval_map_encoder = StaticMapEncoder(map_channels).to(self.device)
+        self.eval_mixer = TransformerMixer(num_agents).to(self.device)
+
+        # Target Networks
+        self.target_drqn = SharedDRQN(obs_channels, num_actions).to(self.device)
+        self.target_map_encoder = StaticMapEncoder(map_channels).to(self.device)
+        self.target_mixer = TransformerMixer(num_agents).to(self.device)
+
+        # Load Eval weights into Target networks initially
+        self.target_drqn.load_state_dict(self.eval_drqn.state_dict())
+        self.target_map_encoder.load_state_dict(self.eval_map_encoder.state_dict())
+        self.target_mixer.load_state_dict(self.eval_mixer.state_dict())
+
+        # We only optimize the Evaluation networks
+        self.optimizer = torch.optim.Adam(
+            list(self.eval_drqn.parameters()) +
+            list(self.eval_map_encoder.parameters()) +
+            list(self.eval_mixer.parameters()),
+            lr=lr
+        )
+
+    def update_target_networks(self, tau=0.005):
+        """Soft update target networks: θ_target = τ * θ_eval + (1 - τ) * θ_target"""
+        for target_param, eval_param in zip(self.target_drqn.parameters(), self.eval_drqn.parameters()):
+            target_param.data.copy_(tau * eval_param.data + (1.0 - tau) * target_param.data)
+
+        for target_param, eval_param in zip(self.target_map_encoder.parameters(), self.eval_map_encoder.parameters()):
+            target_param.data.copy_(tau * eval_param.data + (1.0 - tau) * target_param.data)
+
+        for target_param, eval_param in zip(self.target_mixer.parameters(), self.eval_mixer.parameters()):
+            target_param.data.copy_(tau * eval_param.data + (1.0 - tau) * target_param.data)
+
+    def select_actions(self, obs, hidden_state, epsilon=0.0):
+        """
+        Decentralized Execution (CTDE):
+        Agents select actions based ONLY on local observations using SharedDRQN.
+        No TransformerMixer or MapEncoder is used here.
+
+        obs: (N, C, H, W) numpy array or tensor
+        hidden_state: tuple of (h, c), each (N, hidden_dim)
+        """
+        self.eval_drqn.eval()
+
+        if not isinstance(obs, torch.Tensor):
+            obs = torch.tensor(obs, dtype=torch.float32, device=self.device)
+
+        with torch.no_grad():
+            # Get Q-values from DRQN
+            q_values, _, new_hidden_state = self.eval_drqn(obs, hidden_state) # q_values: (N, num_actions)
+
+            # Epsilon-greedy exploration
+            if torch.rand(1).item() < epsilon:
+                actions = torch.randint(0, self.num_actions, (self.num_agents,), device=self.device)
+            else:
+                actions = torch.argmax(q_values, dim=1) # (N,)
+
+        return actions.cpu().numpy(), new_hidden_state
+
+    def init_hidden(self, batch_size=1):
+        """Initialize LSTM hidden states with zeros"""
+        # Batch size * Number of agents
+        h = torch.zeros(batch_size * self.num_agents, 128, device=self.device)
+        c = torch.zeros(batch_size * self.num_agents, 128, device=self.device)
+        return (h, c)
+
+    def train_step(self, batch, gamma=0.99):
+        """
+        Centralized Training with Truncated BPTT (TBPTT).
+
+        batch: Dict of tensors from Rust replay buffer.
+               Expected shapes:
+               - states: (B, T, N, C, H, W)
+               - actions: (B, T, N)
+               - rewards: (B, T, N)
+               - next_states: (B, T, N, C, H, W)
+               - dones: (B, T, N)
+               - global_maps: (B, C_g, H_g, W_g)  # Notice: Only 1 global map per episode
+        """
+        self.eval_drqn.train()
+        self.eval_map_encoder.train()
+        self.eval_mixer.train()
+
+        # 1. Extract Batch Data and Move to Device
+        states = torch.tensor(batch['states'], dtype=torch.float32, device=self.device)
+        actions = torch.tensor(batch['actions'], dtype=torch.long, device=self.device)
+        rewards = torch.tensor(batch['rewards'], dtype=torch.float32, device=self.device)
+        next_states = torch.tensor(batch['next_states'], dtype=torch.float32, device=self.device)
+        dones = torch.tensor(batch['dones'], dtype=torch.float32, device=self.device)
+        global_maps = torch.tensor(batch['global_maps'], dtype=torch.float32, device=self.device)
+
+        B, T, N, C, H, W = states.shape
+
+        # Calculate Burn-in (e.g., first half) and Learn (second half) lengths
+        burn_in_len = T // 2
+        learn_len = T - burn_in_len
+
+        # Initialize hidden states
+        # Shape: (B * N, hidden_dim)
+        eval_hidden = self.init_hidden(batch_size=B)
+        target_hidden = self.init_hidden(batch_size=B)
+
+        # -------------------------------------------------------------
+        # 2. Burn-in Phase (Pre-warming LSTM)
+        # -------------------------------------------------------------
+        # STRICT REQUIREMENT: Prevent VRAM OOM on RTX 4090 by using torch.no_grad().
+        # We only pass data through DRQN to update the LSTM hidden states without saving the graph.
+        with torch.no_grad():
+            for t in range(burn_in_len):
+                # Reshape states to (B*N, C, H, W)
+                obs_t = states[:, t].view(B * N, C, H, W)
+                next_obs_t = next_states[:, t].view(B * N, C, H, W)
+
+                # Forward pass to update hidden states
+                _, _, eval_hidden = self.eval_drqn(obs_t, eval_hidden)
+                _, _, target_hidden = self.target_drqn(next_obs_t, target_hidden)
+
+        # STRICT REQUIREMENT: Detach hidden states after burn-in before entering the learning phase.
+        # This severs the connection to the burn-in graph (even though we used no_grad, it's safe practice).
+        eval_hidden = (eval_hidden[0].detach(), eval_hidden[1].detach())
+        target_hidden = (target_hidden[0].detach(), target_hidden[1].detach())
+
+        # -------------------------------------------------------------
+        # 3. Learn Phase (TBPTT over the remaining sequence)
+        # -------------------------------------------------------------
+        # Get Map Token from Eval MapEncoder
+        # global_maps shape: (B, C_g, H_g, W_g)
+        eval_map_token = self.eval_map_encoder(global_maps) # (B, 1, hidden_dim)
+
+        with torch.no_grad():
+            target_map_token = self.target_map_encoder(global_maps) # (B, 1, hidden_dim)
+
+        # Lists to store Q-values and hidden states for the learning phase
+        q_evals = []
+        q_targets = []
+
+        for t in range(burn_in_len, T):
+            # Reshape observations
+            obs_t = states[:, t].view(B * N, C, H, W)
+            next_obs_t = next_states[:, t].view(B * N, C, H, W)
+
+            # Forward DRQN (Eval)
+            # Output: q_vals (B*N, num_actions), h_i (B*N, hidden_dim)
+            q_eval_t, h_i_eval, eval_hidden = self.eval_drqn(obs_t, eval_hidden)
+
+            # Select the Q-value corresponding to the action actually taken
+            action_t = actions[:, t].view(B * N, 1) # (B*N, 1)
+            chosen_q_eval = q_eval_t.gather(1, action_t).squeeze(-1) # (B*N,)
+
+            # Reshape outputs to (B, N, ...) for TransformerMixer
+            chosen_q_eval = chosen_q_eval.view(B, N) # (B, N)
+            h_i_eval = h_i_eval.view(B, N, -1)       # (B, N, hidden_dim)
+
+            # Forward TransformerMixer (Eval) to get Q_tot
+            # Pass map_token, h_i, q_i, and dones
+            dones_t = dones[:, t] # (B, N)
+            q_tot_eval = self.eval_mixer(eval_map_token, h_i_eval, chosen_q_eval, dones_t) # (B,)
+            q_evals.append(q_tot_eval)
+
+            # --- Double Q-Learning Target Calculation ---
+            with torch.no_grad():
+                # 1. Use Eval network to select the BEST next action
+                next_q_eval_t, _, _ = self.eval_drqn(next_obs_t, eval_hidden) # (B*N, num_actions)
+                best_next_actions = torch.argmax(next_q_eval_t, dim=1).unsqueeze(-1) # (B*N, 1)
+
+                # 2. Use Target network to evaluate that action
+                q_target_t, h_i_target, target_hidden = self.target_drqn(next_obs_t, target_hidden)
+                chosen_q_target = q_target_t.gather(1, best_next_actions).squeeze(-1) # (B*N,)
+
+                # Reshape for Mixer
+                chosen_q_target = chosen_q_target.view(B, N)
+                h_i_target = h_i_target.view(B, N, -1)
+
+                # Mixer (Target)
+                # Next state dones (for target masking).
+                # Note: if the state was already done at t, it remains done.
+                q_tot_target = self.target_mixer(target_map_token, h_i_target, chosen_q_target, dones_t) # (B,)
+
+                # Calculate TD Target: R_tot + gamma * Q_tot_target (if not fully done)
+                # Here we sum the rewards across agents for the centralized Q_tot
+                reward_tot_t = rewards[:, t].sum(dim=1) # (B,)
+
+                # If all agents are done, no future reward
+                all_done_t = torch.all(dones_t == 1, dim=1).float() # (B,)
+
+                td_target = reward_tot_t + gamma * (1 - all_done_t) * q_tot_target
+                q_targets.append(td_target)
+
+        # -------------------------------------------------------------
+        # 4. Compute Loss and Backpropagate
+        # -------------------------------------------------------------
+        # Stack sequences along time dimension: (B, learn_len)
+        q_evals = torch.stack(q_evals, dim=1)
+        q_targets = torch.stack(q_targets, dim=1)
+
+        # Calculate MSE Loss over the learning sequence
+        loss = F.mse_loss(q_evals, q_targets.detach())
+
+        # Optimize
+        self.optimizer.zero_grad()
+        loss.backward()
+
+        # Gradient clipping to prevent exploding gradients in LSTMs/Transformers
+        torch.nn.utils.clip_grad_norm_(
+            list(self.eval_drqn.parameters()) +
+            list(self.eval_map_encoder.parameters()) +
+            list(self.eval_mixer.parameters()),
+            max_norm=10.0
+        )
+        self.optimizer.step()
+
+        # Soft update target networks
+        self.update_target_networks()
+
+        return loss.item()
