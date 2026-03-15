@@ -118,6 +118,10 @@ impl RustReplayBuffer {
         self.buffer.len()
     }
 
+    fn __len__(&self) -> usize {
+        self.buffer.len()
+    }
+
     fn clear(&mut self) {
         self.buffer.clear();
     }
@@ -434,7 +438,7 @@ impl RustRewardCalculator {
 }
 
 #[pymodule]
-fn module_set_rust(_py: Python, m: &PyModule) -> PyResult<()> {
+fn rust_buffer(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<RustReplayBuffer>()?;
     m.add_class::<RustRewardCalculator>()?; 
     Ok(())
