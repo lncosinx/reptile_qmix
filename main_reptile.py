@@ -41,14 +41,14 @@ if __name__ == '__main__':
         'hidden_dim': 128,
 
         # Inner-loop Hyperparameters
-        'inner_epochs': 10,
+        'inner_epochs': 64,
         'batch_size': 32,
         'seq_len': 120,             # For TBPTT Burn-in and Learn phases
         'buffer_capacity': 1000,
         'inner_lr': 1e-4,
         'gamma': 0.99,
         'epsilon': 0.1,
-        'max_steps': 200,
+        'max_steps': 128,
         'env_name': 'Pogema-8x8-normal-v0' # Will be dynamically masked/changed in workers ideally
     }
 
