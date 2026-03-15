@@ -37,11 +37,17 @@ class PogemaWrapper(gym.Wrapper):
         # Convert to numpy and add Channel dimension: (1, H, W)
         obs_map = np.array(obstacles, dtype=np.float32)
 
-        # Assuming obs_map is 2D (H, W). Add channel dimension
-        if len(obs_map.shape) == 2:
-            obs_map = np.expand_dims(obs_map, axis=0) # (1, H, W)
+        # 统一填充到最大尺寸 25x25
+        MAX_SIZE = 25
+        padded_map = np.zeros((MAX_SIZE, MAX_SIZE), dtype=np.float32)
+        h, w = obs_map.shape
+        # 将实际地图放置在左上角 (或者中心，左上角最简单)
+        padded_map[:h, :w] = obs_map
 
-        return obs_map
+        # 增加 Channel 维度
+        padded_map = np.expand_dims(padded_map, axis=0) # (1, 25, 25)
+
+        return padded_map
 
     def reset(self, **kwargs):
         """
