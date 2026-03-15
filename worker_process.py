@@ -171,9 +171,13 @@ def run_worker_task(worker_id, global_state_dict, config):
         # 在 while 循环上方初始化
         dones = [False] * env.num_agents
 
+        native_arrivals = 0.0
+
         while not done and step < max_steps:
             # Select actions (Decentralized Execution)
             actions, next_hidden_state = trainer.select_actions(obs, hidden_state, epsilon=config.get('epsilon', 0.1))
+
+            native_arrivals += sum(env_rewards)
 
             # 强制接管已完成智能体的动作
             for i in range(env.num_agents):
@@ -225,8 +229,9 @@ def run_worker_task(worker_id, global_state_dict, config):
 
         # Calculate success (Did all agents reach target?)
         # Simple heuristic based on dones array at the last step
-        if all(episode_data['dones'][-1]):
-            success_count += 1
+        # if all(episode_data['dones'][-1]):
+        #     success_count += 1
+        success_count += (native_arrivals / env.num_agents)
 
         # Perform Local Update using TBPTT
         if buffer.len() >= batch_size:
