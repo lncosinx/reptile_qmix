@@ -235,8 +235,8 @@ def run_worker_task(worker_id, global_state_dict, config):
 
         # Perform Local Update using TBPTT
         if buffer.len() >= batch_size:
-            # 内部进行 4 次抽样更新，极大提升样本利用率和 4090 GPU 负载
-            for _ in range(4): 
+            # 内部进行 16 次抽样更新，极大提升样本利用率和 4090 GPU 负载
+            for _ in range(16): 
                 batch = buffer.sample(batch_size)
                 loss = trainer.train_step(batch, gamma=config.get('gamma', 0.99))
                 total_loss += loss
