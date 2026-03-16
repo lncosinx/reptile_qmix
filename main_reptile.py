@@ -76,81 +76,87 @@ if __name__ == '__main__':
     # -------------------------------------------------------------
     print(f"Starting Reptile Meta-Training with {config['num_workers']} workers...")
 
-    # Setup Pool outside the training loop to avoid huge overhead of recreating processes
-    with mp.Pool(processes=config['num_workers']) as pool:
-        for meta_iter in range(config['meta_iterations']):
-            
-            # 计算当前课程学习的进度 (0.0 到 1.0 之间)
-            if config['meta_iterations'] > 1:
-                config['curr_progress'] = meta_iter / (config['meta_iterations'] - 1)
-            else:
-                config['curr_progress'] = 1.0
+    try:
+        # Setup Pool outside the training loop to avoid huge overhead of recreating processes
+        with mp.Pool(processes=config['num_workers']) as pool:
+            for meta_iter in range(config['meta_iterations']):
+                
+                # 计算当前课程学习的进度 (0.0 到 1.0 之间)
+                if config['meta_iterations'] > 1:
+                    config['curr_progress'] = meta_iter / (config['meta_iterations'] - 1)
+                else:
+                    config['curr_progress'] = 1.0
 
-            # Snapshot the current global weights to send to workers
-            # We move them to CPU before pickling to save GPU VRAM and IPC overhead
-            global_state_dict = {
-                'drqn': {k: v.cpu().clone() for k, v in global_drqn.state_dict().items()},
-                'map_encoder': {k: v.cpu().clone() for k, v in global_map_encoder.state_dict().items()},
-                'mixer': {k: v.cpu().clone() for k, v in global_mixer.state_dict().items()}
-            }
+                # Snapshot the current global weights to send to workers
+                # We move them to CPU before pickling to save GPU VRAM and IPC overhead
+                global_state_dict = {
+                    'drqn': {k: v.cpu().clone() for k, v in global_drqn.state_dict().items()},
+                    'map_encoder': {k: v.cpu().clone() for k, v in global_map_encoder.state_dict().items()},
+                    'mixer': {k: v.cpu().clone() for k, v in global_mixer.state_dict().items()}
+                }
 
-            # Dispatch workers
-            results = []
-            for worker_id in range(config['num_workers']):
-                # In a real scenario, we might pass different `env_name` configurations
-                # to different workers to enforce task heterogeneity (e.g., different map sizes)
+                # Dispatch workers
+                results = []
+                for worker_id in range(config['num_workers']):
+                    # In a real scenario, we might pass different `env_name` configurations
+                    # to different workers to enforce task heterogeneity (e.g., different map sizes)
 
-                result = pool.apply_async(run_worker_task, args=(worker_id, global_state_dict, config))
-                results.append(result)
+                    result = pool.apply_async(run_worker_task, args=(worker_id, global_state_dict, config))
+                    results.append(result)
 
-            # Collect \Delta_i from all workers
-            worker_outputs = [res.get() for res in results]
-            # Parse results
-            deltas_drqn = []
-            deltas_map_encoder = []
-            deltas_mixer = []
+                # Collect \Delta_i from all workers
+                worker_outputs = [res.get() for res in results]
+                # Parse results
+                deltas_drqn = []
+                deltas_map_encoder = []
+                deltas_mixer = []
 
-            total_loss = 0.0
-            total_reward = 0.0
-            total_success = 0.0
+                total_loss = 0.0
+                total_reward = 0.0
+                total_success = 0.0
 
-            for w_id, deltas, metrics in worker_outputs:
-                deltas_drqn.append(deltas['drqn'])
-                deltas_map_encoder.append(deltas['map_encoder'])
-                deltas_mixer.append(deltas['mixer'])
+                for w_id, deltas, metrics in worker_outputs:
+                    deltas_drqn.append(deltas['drqn'])
+                    deltas_map_encoder.append(deltas['map_encoder'])
+                    deltas_mixer.append(deltas['mixer'])
 
-                total_loss += metrics['loss']
-                total_reward += metrics['reward']
-                total_success += metrics['success_rate']
+                    total_loss += metrics['loss']
+                    total_reward += metrics['reward']
+                    total_success += metrics['success_rate']
 
-            # -------------------------------------------------------------
-            # 5. Reptile Meta-Update (\\theta_{global} <- \\theta_{global} + \\alpha_{meta} \* \\frac{1}{Batch} \\sum \\Delta_i)
-            # -------------------------------------------------------------
-            meta_update(global_drqn, deltas_drqn, config['alpha_meta'])
-            meta_update(global_map_encoder, deltas_map_encoder, config['alpha_meta'])
-            meta_update(global_mixer, deltas_mixer, config['alpha_meta'])
+                # -------------------------------------------------------------
+                # 5. Reptile Meta-Update (\\theta_{global} <- \\theta_{global} + \\alpha_{meta} \* \\frac{1}{Batch} \\sum \\Delta_i)
+                # -------------------------------------------------------------
+                meta_update(global_drqn, deltas_drqn, config['alpha_meta'])
+                meta_update(global_map_encoder, deltas_map_encoder, config['alpha_meta'])
+                meta_update(global_mixer, deltas_mixer, config['alpha_meta'])
 
-            # -------------------------------------------------------------
-            # 6. Logging & Checkpointing
-            # -------------------------------------------------------------
-            avg_loss = total_loss / config['num_workers']
-            avg_reward = total_reward / config['num_workers']
-            avg_success = total_success / config['num_workers']
+                # -------------------------------------------------------------
+                # 6. Logging & Checkpointing
+                # -------------------------------------------------------------
+                avg_loss = total_loss / config['num_workers']
+                avg_reward = total_reward / config['num_workers']
+                avg_success = total_success / config['num_workers']
 
-            writer.add_scalar('Meta/Loss', avg_loss, meta_iter)
-            writer.add_scalar('Meta/Reward', avg_reward, meta_iter)
-            writer.add_scalar('Meta/Success_Rate', avg_success, meta_iter)
+                writer.add_scalar('Meta/Loss', avg_loss, meta_iter)
+                writer.add_scalar('Meta/Reward', avg_reward, meta_iter)
+                writer.add_scalar('Meta/Success_Rate', avg_success, meta_iter)
 
-            print(f"Meta-Iter {meta_iter+1}/{config['meta_iterations']} | "
-                  f"Loss: {avg_loss:.4f} | Reward: {avg_reward:.4f} | Success: {avg_success:.2%}")
+                print(f"Meta-Iter {meta_iter+1}/{config['meta_iterations']} | "
+                    f"Loss: {avg_loss:.4f} | Reward: {avg_reward:.4f} | Success: {avg_success:.2%}")
 
-            # Save checkpoints periodically
-            if (meta_iter + 1) % 50 == 0:
-                torch.save(global_drqn.state_dict(), f'./models/global_drqn_iter_{meta_iter+1}.pth')
-                torch.save(global_map_encoder.state_dict(), f'./models/global_map_encoder_iter_{meta_iter+1}.pth')
-                torch.save(global_mixer.state_dict(), f'./models/global_mixer_iter_{meta_iter+1}.pth')
-                print(f"Saved Checkpoint to ./models/ at Meta-Iteration {meta_iter+1}")
-
+                # Save checkpoints periodically
+                if (meta_iter + 1) % 50 == 0:
+                    torch.save(global_drqn.state_dict(), f'./models/global_drqn_iter_{meta_iter+1}.pth')
+                    torch.save(global_map_encoder.state_dict(), f'./models/global_map_encoder_iter_{meta_iter+1}.pth')
+                    torch.save(global_mixer.state_dict(), f'./models/global_mixer_iter_{meta_iter+1}.pth')
+                    print(f"Saved Checkpoint to ./models/ at Meta-Iteration {meta_iter+1}")
+    except Exception:
+        if (meta_iter > 1) :
+                    torch.save(global_drqn.state_dict(), f'./models/global_drqn_iter_{meta_iter}.pth')
+                    torch.save(global_map_encoder.state_dict(), f'./models/global_map_encoder_iter_{meta_iter}.pth')
+                    torch.save(global_mixer.state_dict(), f'./models/global_mixer_iter_{meta_iter}.pth')
+                    print(f"interruption ./models/ at Meta-Iteration {meta_iter}")
     # Final Save
     torch.save(global_drqn.state_dict(), './models/global_drqn_final.pth')
     torch.save(global_map_encoder.state_dict(), './models/global_map_encoder_final.pth')
