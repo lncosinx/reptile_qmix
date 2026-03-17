@@ -83,7 +83,7 @@ class TransformerMixer(nn.Module):
         self.hyper_w1 = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, num_agents * mix_hidden_dim)
+            nn.Linear(hidden_dim, mix_hidden_dim)
         )
         # B1: s_global -> (1, mix_hidden_dim)
         self.hyper_b1 = nn.Linear(hidden_dim, mix_hidden_dim)
@@ -129,6 +129,14 @@ class TransformerMixer(nn.Module):
         # Extract 0th position feature (map_token) as high-level global state
         s_global = out_seq[:, 0, :] # (B, hidden_dim)
 
+        agent_features = out_seq[:, 1:, :] # (B, N, hidden_dim)
+
+        # s_global 是 (B, 128) -> 扩展成 (B, N, 128)
+        s_global_expanded = s_global.unsqueeze(1).expand(-1, N, -1)
+
+        # 把全局宏观情报发给每个人，拼在一起变成 256 维度
+        combined_features = torch.cat([agent_features, s_global_expanded], dim=-1)
+
         # 4. QMIX-like Non-linear Mixing
         
         # dones 值为 1 表示已到达终点，因此 (1 - dones) 为有效掩码
@@ -138,8 +146,8 @@ class TransformerMixer(nn.Module):
         q_i_reshaped = q_i_masked.view(B, 1, N)
 
         # W1: Absolute values to ensure non-negative weights
-        w1 = torch.abs(self.hyper_w1(s_global))
-        w1 = w1.view(B, N, self.mix_hidden_dim)
+        w1 = torch.abs(self.hyper_w1(combined_features))
+        # w1 = w1.view(B, N, self.mix_hidden_dim)
         b1 = self.hyper_b1(s_global).view(B, 1, self.mix_hidden_dim)
 
         # Hidden layer: (B, 1, N) @ (B, N, mix_hidden_dim) -> (B, 1, mix_hidden_dim)
