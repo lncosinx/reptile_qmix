@@ -35,7 +35,7 @@ def get_generated_map_grid(difficulty_ratio, map_type_config=None, seed=None):
         
     #测试指定地图类型
     map_type = map_type_config if map_type_config is not None else map_type
-    # 这里的代码需要补全之前的逻辑
+    
     map_str = ""
     if map_type == 'maze':
         map_str = MazeGenerator.generate_maze(width=width, 
@@ -67,19 +67,14 @@ def get_generated_map_grid(difficulty_ratio, map_type_config=None, seed=None):
 
     return map_str, map_type, seed, max_episode_steps
 
-def run_worker_task(worker_id, global_state_dict, config):
-    """
-    Executes the inner-loop (Inner-loop) training for the Reptile Meta-learning framework.
 
-    Args:
-        worker_id (int): ID of the worker.
-        global_state_dict (dict): Dictionary containing the state_dicts of the global Eval networks.
-        config (dict): Hyperparameters and configurations.
-
-    Returns:
-        dict: Contains the parameter differences (Deltas) and training metrics.
+def persistent_worker_process(worker_id, global_models, task_queue, result_queue, config):
     """
-    # 1. Initialization
+    常驻 Worker 进程：接收信号 -> 同步全局权重 -> 内部训练 -> 返回 Deltas
+    """
+    # ---------------------------------------------------------
+    # 1. 进程级常驻初始化 (只执行一次，避免每轮重复分配 GPU 显存)
+    # ---------------------------------------------------------
     device = config.get('device', 'cpu')
     num_agents = config['num_agents']
     obs_channels = config['obs_channels']
@@ -88,7 +83,6 @@ def run_worker_task(worker_id, global_state_dict, config):
     inner_epochs = config['inner_epochs']
     batch_size = config['batch_size']
     seq_len = config['seq_len']
-    env_name = config.get('env_name', 'Pogema-8x8-normal-v0')
 
     # Initialize Local Trainer
     trainer = AgentTrainer(
@@ -100,174 +94,159 @@ def run_worker_task(worker_id, global_state_dict, config):
         lr=config.get('inner_lr', 1e-4)
     )
 
-    # Load Global Weights (\theta_{task} = \theta_{global})
-    trainer.eval_drqn.load_state_dict(global_state_dict['drqn'])
-    trainer.eval_map_encoder.load_state_dict(global_state_dict['map_encoder'])
-    trainer.eval_mixer.load_state_dict(global_state_dict['mixer'])
-
-    # Also sync Target networks initially
-    trainer.target_drqn.load_state_dict(global_state_dict['drqn'])
-    trainer.target_map_encoder.load_state_dict(global_state_dict['map_encoder'])
-    trainer.target_mixer.load_state_dict(global_state_dict['mixer'])
-    progress = config.get('curr_progress', 0.0)
-
-    # Initialize Environment
-    # 1. 动态生成一张地图的字符串（你可以根据课程学习的进度动态调整 difficulty_ratio）
-    map_str, map_type, seed, max_episode_steps = get_generated_map_grid(difficulty_ratio=progress)
-
-    # 2. 将地图字符串注入到 Pogema 的 GridConfig 中
-    grid_config = GridConfig(
-        map=map_str,
-        num_agents=num_agents,                  # 必须与你设定的智能体数量一致
-        observation_radius=5,          # 视野范围
-        on_target='finish',            # 到达目标后的行为
-        max_episode_steps=max_episode_steps,
-        seed=seed
-    )
-
-    # 3. 使用核心基础名称 "Pogema-v0" 结合 grid_config 创建环境，彻底摆脱静态名称限制
-    raw_env = pogema_v0(grid_config=grid_config)
-    env = NativePogemaWrapper(raw_env, num_agents)
-
     reward_calculator = RustRewardCalculator(num_agents)
 
-    # Extract map shapes by doing a dummy reset
-    obs, info = env.reset()
-    dummy_global_map = env.current_global_map
-    global_map_shape = dummy_global_map.shape # (C_g, H_g, W_g)
+    # ---------------------------------------------------------
+    # 2. 常驻循环 (Inner-loop 执行区)
+    # ---------------------------------------------------------
+    while True:
+        # 阻塞等待主进程发来任务信号
+        task = task_queue.get()
+        
+        # 接收到毒丸信号，安全退出循环
+        if task == "TERMINATE":
+            break
+            
+        progress = task['curr_progress']
 
-    obs_shape = obs[0].shape # (C, H, W)
+        # 从共享内存中的全局模型拉取最新权重
+        # load_state_dict 会自动将 CPU 上的 shared weights 转移至当前 Trainer 所在的 GPU
+        trainer.eval_drqn.load_state_dict(global_models['drqn'].state_dict())
+        trainer.eval_map_encoder.load_state_dict(global_models['map_encoder'].state_dict())
+        trainer.eval_mixer.load_state_dict(global_models['mixer'].state_dict())
 
-    # Initialize Rust Replay Buffer
-    buffer = RustReplayBuffer(
-        capacity=config.get('buffer_capacity', 1000),
-        seq_len=seq_len,
-        num_agents=num_agents,
-        obs_shape=obs_shape,
-        global_map_shape=global_map_shape
-    )
+        # Sync Target networks initially for this meta-iteration
+        trainer.target_drqn.load_state_dict(global_models['drqn'].state_dict())
+        trainer.target_map_encoder.load_state_dict(global_models['map_encoder'].state_dict())
+        trainer.target_mixer.load_state_dict(global_models['mixer'].state_dict())
 
-    # 2. Collect Trajectories and Train
-    total_loss = 0.0
-    total_reward = 0.0
-    success_count = 0
-    episodes_run = 0
+        # ---------------------------------------------------------
+        # 环境与 Buffer 初始化 (每轮 Meta-Iter 需要重置，因为地图大小可能变化)
+        # ---------------------------------------------------------
+        map_str, map_type, seed, max_episode_steps = get_generated_map_grid(difficulty_ratio=progress)
 
-    for epoch in range(inner_epochs):
-        # Reset Environment
+        grid_config = GridConfig(
+            map=map_str,
+            num_agents=num_agents,                  
+            observation_radius=5,          
+            on_target='finish',            
+            max_episode_steps=max_episode_steps,
+            seed=seed
+        )
+
+        raw_env = pogema_v0(grid_config=grid_config)
+        env = NativePogemaWrapper(raw_env, num_agents)
+
+        # Extract map shapes by doing a dummy reset
         obs, info = env.reset()
+        dummy_global_map = env.current_global_map
+        global_map_shape = dummy_global_map.shape # (C_g, H_g, W_g)
+        obs_shape = obs[0].shape # (C, H, W)
 
-        # Format obs to (N, C, H, W)
-        obs = np.array(obs, dtype=np.float32)
+        # Initialize Rust Replay Buffer for current map shape
+        buffer = RustReplayBuffer(
+            capacity=config.get('buffer_capacity', 1000),
+            seq_len=seq_len,
+            num_agents=num_agents,
+            obs_shape=obs_shape,
+            global_map_shape=global_map_shape
+        )
 
-        # Initialize hidden states for execution
-        hidden_state = trainer.init_hidden(batch_size=1)
+        # ---------------------------------------------------------
+        # 执行内层训练循环
+        # ---------------------------------------------------------
+        total_loss = 0.0
+        total_reward = 0.0
+        success_count = 0.0
+        episodes_run = 0
 
-        episode_reward = 0.0
-        done = False
-        step = 0
-        max_steps = config.get('max_steps', 200)
+        for epoch in range(inner_epochs):
+            obs, info = env.reset()
+            obs = np.array(obs, dtype=np.float32)
+            hidden_state = trainer.init_hidden(batch_size=1)
 
-        # 在 while 循环上方初始化
-        dones = [False] * env.num_agents
+            episode_reward = 0.0
+            done = False
+            step = 0
+            max_steps = config.get('max_steps', 200)
 
-        native_arrivals = 0.0
+            dones = [False] * env.num_agents
+            native_arrivals = 0.0
 
-        while not done and step < max_steps:
-            # Select actions (Decentralized Execution)
-            actions, next_hidden_state = trainer.select_actions(obs, hidden_state, epsilon=config.get('epsilon', 0.1))
+            while not done and step < max_steps:
+                actions, next_hidden_state = trainer.select_actions(obs, hidden_state, epsilon=config.get('epsilon', 0.1))
+                next_obs, rewards, dones, truncated, infos = env.step(actions)
 
-            # 强制接管已完成智能体的动作
-            for i in range(env.num_agents):
-                if dones[i]:
-                    actions[i] = 0  # 强制设为 0 (Stay) 操作，避免触发 Rust 端的撞墙惩罚
+                native_arrivals += sum(rewards)
+                next_obs = np.array(next_obs, dtype=np.float32)
 
-            # Step environment
-            next_obs, rewards, dones, truncated, infos = env.step(actions)
+                rewards = reward_calculator.calculate(
+                    rewards=np.array(rewards, dtype=np.float32),
+                    obs=np.array(obs, dtype=np.float32),
+                    next_obs=next_obs,
+                    actions=np.array(actions, dtype=np.int64),
+                    alignment_config={"use_alignment": True, "value": 0.1},
+                    stop_penalty_config={"use_stop_penalty": True, "value": 0.01},
+                    step_penalty_config={"use_step_penalty": True, "value": 0.01},
+                    goal_reward_multiple=100.0
+                )
 
-            native_arrivals += sum(rewards)
+                env.cache_step(obs, actions, rewards, next_obs, dones)
+                episode_reward += sum(rewards)
+                obs = next_obs
+                hidden_state = next_hidden_state
 
-            # Format outputs
-            next_obs = np.array(next_obs, dtype=np.float32)
+                if isinstance(dones, (list, tuple, np.ndarray)):
+                    if all(dones):
+                        done = True
+                else:
+                    if dones:
+                        done = True
 
-            rewards = reward_calculator.calculate(
-            rewards=np.array(rewards, dtype=np.float32),
-            obs=np.array(obs, dtype=np.float32),
-            next_obs=next_obs,
-            actions=np.array(actions, dtype=np.int64),
-            # 传入在 Rust 中定义的 Config
-            alignment_config={"use_alignment": True, "value": 0.1},
-            stop_penalty_config={"use_stop_penalty": True, "value": 0.01},
-            step_penalty_config={"use_step_penalty": True, "value": 0.01},
-            goal_reward_multiple=100.0
-            )
+                step += 1
 
-            # Cache step data locally in Python wrapper
-            env.cache_step(obs, actions, rewards, next_obs, dones)
+            episode_data = env.get_episode_data()
+            buffer.push(episode_data)
 
-            episode_reward += sum(rewards)
-            obs = next_obs
-            hidden_state = next_hidden_state
+            total_reward += episode_reward
+            episodes_run += 1
+            success_count += (native_arrivals / env.num_agents)
 
-            # In POGEMA, done is usually a list of booleans per agent.
-            # We consider episode done if all agents are done.
-            if isinstance(dones, list) or isinstance(dones, tuple) or isinstance(dones, np.ndarray):
-                if all(dones):
-                    done = True
-            else:
-                if dones:
-                    done = True
+            # Perform Local Update using TBPTT
+            if buffer.len() >= batch_size:
+                for _ in range(16): 
+                    batch = buffer.sample(batch_size)
+                    loss = trainer.train_step(batch, gamma=config.get('gamma', 0.99))
+                    total_loss += loss
+                torch.cuda.empty_cache()
 
-            step += 1
+        # ---------------------------------------------------------
+        # 计算 Parameter Differences (Deltas)
+        # \Delta = \theta_{task} - \theta_{global}
+        # ---------------------------------------------------------
+        deltas = {'drqn': {}, 'map_encoder': {}, 'mixer': {}}
+        
+        # 提取全局模型状态用于比对
+        global_drqn_state = global_models['drqn'].state_dict()
+        global_map_encoder_state = global_models['map_encoder'].state_dict()
+        global_mixer_state = global_models['mixer'].state_dict()
 
-        # Push the full episode to Rust Replay Buffer
-        episode_data = env.get_episode_data()
-        buffer.push(episode_data)
+        with torch.no_grad():
+            for name, param in trainer.eval_drqn.state_dict().items():
+                deltas['drqn'][name] = (param.cpu() - global_drqn_state[name].cpu()).clone()
 
-        total_reward += episode_reward
-        episodes_run += 1
+            for name, param in trainer.eval_map_encoder.state_dict().items():
+                deltas['map_encoder'][name] = (param.cpu() - global_map_encoder_state[name].cpu()).clone()
 
-        # Calculate success (Did all agents reach target?)
-        # Simple heuristic based on dones array at the last step
-        # if all(episode_data['dones'][-1]):
-        #     success_count += 1
-        success_count += (native_arrivals / env.num_agents)
+            for name, param in trainer.eval_mixer.state_dict().items():
+                deltas['mixer'][name] = (param.cpu() - global_mixer_state[name].cpu()).clone()
 
-        # Perform Local Update using TBPTT
-        if buffer.len() >= batch_size:
-            # 内部进行 16 次抽样更新，极大提升样本利用率和 4090 GPU 负载
-            for _ in range(16): 
-                batch = buffer.sample(batch_size)
-                loss = trainer.train_step(batch, gamma=config.get('gamma', 0.99))
-                total_loss += loss
-            # 释放由 TBPTT 动态图产生的显存碎片
-            torch.cuda.empty_cache()
+        # Compile Metrics
+        metrics = {
+            'loss': total_loss / max(1, (inner_epochs - batch_size + 1)) if inner_epochs >= batch_size else 0.0,
+            'reward': total_reward / max(1, episodes_run),
+            'success_rate': success_count / max(1, episodes_run)
+        }
 
-    # 3. Compute Parameter Differences: \Delta = \theta_{task} - \theta_{global}
-    # This prevents sending huge absolute weights back and saves IPC overhead.
-    deltas = {
-        'drqn': {},
-        'map_encoder': {},
-        'mixer': {}
-    }
-
-    # Compute differences for DRQN
-    for name, param in trainer.eval_drqn.state_dict().items():
-        deltas['drqn'][name] = (param.cpu() - global_state_dict['drqn'][name].cpu()).clone()
-
-    # Compute differences for MapEncoder
-    for name, param in trainer.eval_map_encoder.state_dict().items():
-        deltas['map_encoder'][name] = (param.cpu() - global_state_dict['map_encoder'][name].cpu()).clone()
-
-    # Compute differences for Mixer
-    for name, param in trainer.eval_mixer.state_dict().items():
-        deltas['mixer'][name] = (param.cpu() - global_state_dict['mixer'][name].cpu()).clone()
-
-    # Compile Metrics
-    metrics = {
-        'loss': total_loss / max(1, (inner_epochs - batch_size + 1)) if inner_epochs >= batch_size else 0.0,
-        'reward': total_reward / max(1, episodes_run),
-        'success_rate': success_count / max(1, episodes_run)
-    }
-
-    return worker_id, deltas, metrics
+        # 通过队列将结果传回主进程
+        result_queue.put((worker_id, deltas, metrics))
