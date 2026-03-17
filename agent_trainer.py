@@ -232,8 +232,11 @@ class AgentTrainer:
             # 掩码相乘，把 padding 的 garbage 产生的 loss 归零
             masked_loss = element_wise_loss * learn_masks
             
-            # 求平均时，只能除以有效的 step 数量，用 clamp 防止除以 0
-            loss = masked_loss.sum() / learn_masks.sum().clamp(min=1.0)
+            # 先对时间维度 (dim=1) 求平均，再对 Batch 维度 (dim=0) 求平均
+            # 这样保证长短不同的 Episode 对梯度的贡献是均衡的
+            episode_valid_steps = learn_masks.sum(dim=1).clamp(min=1.0)
+            episode_losses = masked_loss.sum(dim=1) / episode_valid_steps
+            loss = episode_losses.mean()
 
         # Optimize
         self.optimizer.zero_grad()
