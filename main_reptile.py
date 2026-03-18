@@ -63,9 +63,9 @@ if __name__ == '__main__':
     global_map_encoder = StaticMapEncoder(config['map_channels']).cpu()
     global_mixer = TransformerMixer(config['num_agents']).cpu()
 
-    global_drqn.share_memory_()
-    global_map_encoder.share_memory_()
-    global_mixer.share_memory_()
+    global_drqn.share_memory()
+    global_map_encoder.share_memory()
+    global_mixer.share_memory()
 
     global_models = {
         'drqn': global_drqn,

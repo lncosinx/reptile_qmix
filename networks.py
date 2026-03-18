@@ -81,7 +81,7 @@ class TransformerMixer(nn.Module):
         # Hypernetwork for QMIX-like mixing
         # W1: s_global -> (N, mix_hidden_dim)
         self.hyper_w1 = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
+            nn.Linear(hidden_dim*2, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, mix_hidden_dim)
         )
