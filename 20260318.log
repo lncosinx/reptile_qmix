@@ -5316,3 +5316,310 @@ Meta-Iter 5208/6400 | Loss: 118.2706 | Reward: 36.9601 | Success: 8.33%
 Meta-Iter 5209/6400 | Loss: 143.7006 | Reward: 17.6553 | Success: 5.89%
 Meta-Iter 5210/6400 | Loss: 196.2941 | Reward: 61.6262 | Success: 12.40%
 Meta-Iter 5211/6400 | Loss: 71.7557 | Reward: 3.9865 | Success: 4.17%
+Meta-Iter 5212/6400 | Loss: 112.2364 | Reward: 55.8523 | Success: 11.72%
+Meta-Iter 5213/6400 | Loss: 151.4589 | Reward: 39.5597 | Success: 8.46%
+Meta-Iter 5214/6400 | Loss: 98.7733 | Reward: 30.9313 | Success: 8.24%
+Meta-Iter 5215/6400 | Loss: 118.5772 | Reward: 28.0724 | Success: 7.19%
+Meta-Iter 5216/6400 | Loss: 49.1998 | Reward: -16.2348 | Success: 2.34%
+Meta-Iter 5217/6400 | Loss: 83.0249 | Reward: -5.4935 | Success: 3.65%
+Meta-Iter 5218/6400 | Loss: 85.0704 | Reward: 3.3904 | Success: 4.65%
+Meta-Iter 5219/6400 | Loss: 94.9240 | Reward: 21.7505 | Success: 6.61%
+Meta-Iter 5220/6400 | Loss: 103.4200 | Reward: 12.6354 | Success: 5.34%
+Meta-Iter 5221/6400 | Loss: 20.9378 | Reward: 8.4350 | Success: 5.05%
+Meta-Iter 5222/6400 | Loss: 43.4016 | Reward: 0.9954 | Success: 3.48%
+Meta-Iter 5223/6400 | Loss: 136.1876 | Reward: 18.2640 | Success: 6.64%
+Meta-Iter 5224/6400 | Loss: 142.0077 | Reward: 50.5592 | Success: 10.06%
+Meta-Iter 5225/6400 | Loss: 83.3972 | Reward: 44.4173 | Success: 9.02%
+Meta-Iter 5226/6400 | Loss: 87.1035 | Reward: 26.3535 | Success: 7.06%
+Meta-Iter 5227/6400 | Loss: 74.3998 | Reward: -6.9718 | Success: 3.61%
+Meta-Iter 5228/6400 | Loss: 130.2976 | Reward: 22.0145 | Success: 6.80%
+Meta-Iter 5229/6400 | Loss: 68.0754 | Reward: 3.2553 | Success: 3.71%
+Meta-Iter 5230/6400 | Loss: 62.5408 | Reward: 3.7620 | Success: 4.33%
+Meta-Iter 5231/6400 | Loss: 156.0814 | Reward: 45.0395 | Success: 9.41%
+Meta-Iter 5232/6400 | Loss: 97.6612 | Reward: 9.4172 | Success: 4.23%
+Meta-Iter 5233/6400 | Loss: 194.0979 | Reward: 33.5811 | Success: 9.64%
+Meta-Iter 5234/6400 | Loss: 51.9125 | Reward: 0.4462 | Success: 3.48%
+Meta-Iter 5235/6400 | Loss: 228.6937 | Reward: 51.1453 | Success: 9.77%
+Meta-Iter 5236/6400 | Loss: 187.4146 | Reward: 46.9562 | Success: 9.64%
+Meta-Iter 5237/6400 | Loss: 62.7266 | Reward: -9.1332 | Success: 2.51%
+Meta-Iter 5238/6400 | Loss: 225.4479 | Reward: 62.1747 | Success: 12.57%
+Meta-Iter 5239/6400 | Loss: 133.5178 | Reward: 16.5835 | Success: 6.71%
+Meta-Iter 5240/6400 | Loss: 111.1596 | Reward: 24.2241 | Success: 7.65%
+Meta-Iter 5241/6400 | Loss: 109.6343 | Reward: 11.1223 | Success: 4.98%
+Meta-Iter 5242/6400 | Loss: 186.9807 | Reward: 59.4923 | Success: 12.50%
+Meta-Iter 5243/6400 | Loss: 70.3396 | Reward: -4.3988 | Success: 3.09%
+Meta-Iter 5244/6400 | Loss: 77.4681 | Reward: 53.8976 | Success: 11.82%
+Meta-Iter 5245/6400 | Loss: 169.9096 | Reward: 48.6153 | Success: 10.09%
+Meta-Iter 5246/6400 | Loss: 65.2196 | Reward: 21.8911 | Success: 7.26%
+Meta-Iter 5247/6400 | Loss: 110.5367 | Reward: 6.0970 | Success: 5.31%
+Meta-Iter 5248/6400 | Loss: 90.3138 | Reward: 27.4097 | Success: 8.14%
+Meta-Iter 5249/6400 | Loss: 211.6201 | Reward: 71.5672 | Success: 13.90%
+Meta-Iter 5250/6400 | Loss: 65.7062 | Reward: 0.3025 | Success: 4.17%
+Saved Checkpoint to ./models/ at Meta-Iteration 5250
+Meta-Iter 5251/6400 | Loss: 59.4932 | Reward: -1.7203 | Success: 3.48%
+Meta-Iter 5252/6400 | Loss: 98.7673 | Reward: 42.3591 | Success: 9.41%
+Meta-Iter 5253/6400 | Loss: 84.8045 | Reward: 21.6767 | Success: 6.58%
+Meta-Iter 5254/6400 | Loss: 64.9531 | Reward: -3.2727 | Success: 3.29%
+Meta-Iter 5255/6400 | Loss: 96.5362 | Reward: 12.2229 | Success: 5.40%
+Meta-Iter 5256/6400 | Loss: 133.4632 | Reward: 18.2132 | Success: 5.79%
+Meta-Iter 5257/6400 | Loss: 154.3507 | Reward: 32.7095 | Success: 7.88%
+Meta-Iter 5258/6400 | Loss: 125.9420 | Reward: 22.1885 | Success: 6.77%
+Meta-Iter 5259/6400 | Loss: 115.2278 | Reward: 51.8179 | Success: 11.00%
+Meta-Iter 5260/6400 | Loss: 83.9674 | Reward: 25.1152 | Success: 6.87%
+Meta-Iter 5261/6400 | Loss: 66.5605 | Reward: -6.8805 | Success: 3.09%
+Meta-Iter 5262/6400 | Loss: 62.0345 | Reward: 16.6993 | Success: 5.79%
+Meta-Iter 5263/6400 | Loss: 76.2342 | Reward: 60.7427 | Success: 12.40%
+Meta-Iter 5264/6400 | Loss: 104.7520 | Reward: 60.2951 | Success: 12.30%
+Meta-Iter 5265/6400 | Loss: 74.2750 | Reward: 13.3163 | Success: 5.05%
+Meta-Iter 5266/6400 | Loss: 67.1551 | Reward: 39.8477 | Success: 8.53%
+Meta-Iter 5267/6400 | Loss: 146.2598 | Reward: 31.2311 | Success: 7.49%
+Meta-Iter 5268/6400 | Loss: 75.6605 | Reward: 1.7590 | Success: 3.26%
+Meta-Iter 5269/6400 | Loss: 174.0996 | Reward: 34.3767 | Success: 8.72%
+Meta-Iter 5270/6400 | Loss: 51.8417 | Reward: 9.1336 | Success: 4.00%
+Meta-Iter 5271/6400 | Loss: 187.9470 | Reward: 49.4435 | Success: 10.42%
+Meta-Iter 5272/6400 | Loss: 70.3010 | Reward: 9.8012 | Success: 5.76%
+Meta-Iter 5273/6400 | Loss: 125.6473 | Reward: 38.2590 | Success: 9.44%
+Meta-Iter 5274/6400 | Loss: 81.4366 | Reward: 12.0608 | Success: 4.92%
+Meta-Iter 5275/6400 | Loss: 191.7698 | Reward: 35.3329 | Success: 7.58%
+Meta-Iter 5276/6400 | Loss: 86.1071 | Reward: 15.1062 | Success: 5.92%
+Meta-Iter 5277/6400 | Loss: 118.8720 | Reward: 19.5452 | Success: 7.03%
+Meta-Iter 5278/6400 | Loss: 20.0821 | Reward: -4.6847 | Success: 2.83%
+Meta-Iter 5279/6400 | Loss: 194.0842 | Reward: 29.7651 | Success: 9.08%
+Meta-Iter 5280/6400 | Loss: 99.5554 | Reward: 46.6033 | Success: 9.83%
+Meta-Iter 5281/6400 | Loss: 64.5376 | Reward: 15.0107 | Success: 5.79%
+Meta-Iter 5282/6400 | Loss: 73.5796 | Reward: 20.4345 | Success: 5.53%
+Meta-Iter 5283/6400 | Loss: 46.1736 | Reward: -4.6042 | Success: 3.03%
+Meta-Iter 5284/6400 | Loss: 30.5977 | Reward: -14.7006 | Success: 1.30%
+Meta-Iter 5285/6400 | Loss: 39.5008 | Reward: -14.4112 | Success: 1.73%
+Meta-Iter 5286/6400 | Loss: 184.7318 | Reward: 25.4469 | Success: 7.13%
+Meta-Iter 5287/6400 | Loss: 44.6835 | Reward: -1.1058 | Success: 3.35%
+Meta-Iter 5288/6400 | Loss: 68.6225 | Reward: -0.0057 | Success: 3.26%
+Meta-Iter 5289/6400 | Loss: 125.5155 | Reward: 31.2434 | Success: 7.49%
+Meta-Iter 5290/6400 | Loss: 203.3090 | Reward: 41.9244 | Success: 9.90%
+Meta-Iter 5291/6400 | Loss: 69.4093 | Reward: 20.1144 | Success: 5.92%
+Meta-Iter 5292/6400 | Loss: 84.4104 | Reward: 39.4997 | Success: 9.44%
+Meta-Iter 5293/6400 | Loss: 61.5214 | Reward: 9.1197 | Success: 5.24%
+Meta-Iter 5294/6400 | Loss: 83.3994 | Reward: 23.0217 | Success: 7.23%
+Meta-Iter 5295/6400 | Loss: 73.4978 | Reward: 22.3599 | Success: 6.38%
+Meta-Iter 5296/6400 | Loss: 134.7345 | Reward: 35.4243 | Success: 8.37%
+Meta-Iter 5297/6400 | Loss: 111.5116 | Reward: 41.8214 | Success: 9.54%
+Meta-Iter 5298/6400 | Loss: 76.2344 | Reward: -2.8161 | Success: 2.86%
+Meta-Iter 5299/6400 | Loss: 144.7123 | Reward: 26.0574 | Success: 6.38%
+Meta-Iter 5300/6400 | Loss: 115.3975 | Reward: 50.6258 | Success: 11.00%
+Saved Checkpoint to ./models/ at Meta-Iteration 5300
+Meta-Iter 5301/6400 | Loss: 117.5744 | Reward: 12.0656 | Success: 5.60%
+Meta-Iter 5302/6400 | Loss: 152.5194 | Reward: 18.4609 | Success: 6.58%
+Meta-Iter 5303/6400 | Loss: 98.4726 | Reward: -2.3618 | Success: 4.10%
+Meta-Iter 5304/6400 | Loss: 155.6996 | Reward: 28.6904 | Success: 7.42%
+Meta-Iter 5305/6400 | Loss: 184.6141 | Reward: 40.5451 | Success: 9.54%
+Meta-Iter 5306/6400 | Loss: 91.3440 | Reward: 25.3503 | Success: 6.80%
+Meta-Iter 5307/6400 | Loss: 110.8478 | Reward: 22.7343 | Success: 6.35%
+Meta-Iter 5308/6400 | Loss: 51.9293 | Reward: 9.2354 | Success: 4.56%
+Meta-Iter 5309/6400 | Loss: 79.1713 | Reward: 21.6625 | Success: 7.10%
+Meta-Iter 5310/6400 | Loss: 124.0167 | Reward: 16.5456 | Success: 5.66%
+Meta-Iter 5311/6400 | Loss: 124.8059 | Reward: 25.8008 | Success: 7.68%
+Meta-Iter 5312/6400 | Loss: 103.1242 | Reward: 26.7400 | Success: 7.78%
+Meta-Iter 5313/6400 | Loss: 105.4958 | Reward: 2.4042 | Success: 3.68%
+Meta-Iter 5314/6400 | Loss: 104.7685 | Reward: -4.0346 | Success: 4.26%
+Meta-Iter 5315/6400 | Loss: 107.6477 | Reward: 17.8949 | Success: 6.54%
+Meta-Iter 5316/6400 | Loss: 99.1486 | Reward: 5.9960 | Success: 4.59%
+Meta-Iter 5317/6400 | Loss: 71.4020 | Reward: 37.8776 | Success: 8.85%
+Meta-Iter 5318/6400 | Loss: 83.3053 | Reward: 6.0098 | Success: 4.04%
+Meta-Iter 5319/6400 | Loss: 66.2106 | Reward: 3.3399 | Success: 3.78%
+Meta-Iter 5320/6400 | Loss: 186.0514 | Reward: 64.3935 | Success: 11.75%
+Meta-Iter 5321/6400 | Loss: 53.9036 | Reward: -6.4191 | Success: 2.38%
+Meta-Iter 5322/6400 | Loss: 130.6555 | Reward: 24.3422 | Success: 7.62%
+Meta-Iter 5323/6400 | Loss: 68.4356 | Reward: 20.6397 | Success: 6.77%
+Meta-Iter 5324/6400 | Loss: 50.4780 | Reward: -12.1476 | Success: 2.38%
+Meta-Iter 5325/6400 | Loss: 57.0740 | Reward: 19.9382 | Success: 6.97%
+Meta-Iter 5326/6400 | Loss: 110.8163 | Reward: 23.8723 | Success: 6.32%
+Meta-Iter 5327/6400 | Loss: 93.2961 | Reward: 20.5728 | Success: 6.38%
+Meta-Iter 5328/6400 | Loss: 33.3738 | Reward: -5.9389 | Success: 2.99%
+Meta-Iter 5329/6400 | Loss: 96.4468 | Reward: 41.9334 | Success: 8.82%
+Meta-Iter 5330/6400 | Loss: 136.9366 | Reward: 20.4384 | Success: 6.54%
+Meta-Iter 5331/6400 | Loss: 142.4967 | Reward: 31.0884 | Success: 9.38%
+Meta-Iter 5332/6400 | Loss: 65.0739 | Reward: -6.8086 | Success: 2.51%
+Meta-Iter 5333/6400 | Loss: 60.8464 | Reward: -1.1113 | Success: 3.78%
+Meta-Iter 5334/6400 | Loss: 95.0045 | Reward: 49.6922 | Success: 10.48%
+Meta-Iter 5335/6400 | Loss: 57.9919 | Reward: -6.8658 | Success: 2.99%
+Meta-Iter 5336/6400 | Loss: 71.0802 | Reward: 10.9502 | Success: 5.34%
+Meta-Iter 5337/6400 | Loss: 126.6624 | Reward: 24.8203 | Success: 5.96%
+Meta-Iter 5338/6400 | Loss: 81.3681 | Reward: 24.8790 | Success: 6.51%
+Meta-Iter 5339/6400 | Loss: 110.2183 | Reward: 28.7355 | Success: 7.36%
+Meta-Iter 5340/6400 | Loss: 63.4947 | Reward: 17.8405 | Success: 5.86%
+Meta-Iter 5341/6400 | Loss: 80.5887 | Reward: 3.3659 | Success: 3.48%
+Meta-Iter 5342/6400 | Loss: 69.7145 | Reward: 10.4253 | Success: 4.82%
+Meta-Iter 5343/6400 | Loss: 39.5942 | Reward: 13.9161 | Success: 5.89%
+Meta-Iter 5344/6400 | Loss: 148.9901 | Reward: 15.5074 | Success: 5.89%
+Meta-Iter 5345/6400 | Loss: 82.7429 | Reward: 33.7298 | Success: 8.40%
+Meta-Iter 5346/6400 | Loss: 174.2316 | Reward: 53.7020 | Success: 10.87%
+Meta-Iter 5347/6400 | Loss: 148.1523 | Reward: 33.4831 | Success: 8.56%
+Meta-Iter 5348/6400 | Loss: 35.5880 | Reward: -10.2874 | Success: 2.67%
+Meta-Iter 5349/6400 | Loss: 71.5577 | Reward: 19.5650 | Success: 6.45%
+
+Training interrupted by user. Saving current models...
+Shutting down workers...
+Process Process-5:
+Process Process-1:
+Traceback (most recent call last):
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/multiprocessing/process.py", line 314, in _bootstrap
+    self.run()
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/ryan/lymapf/reptile_qmix/worker_process.py", line 219, in persistent_worker_process
+    loss = trainer.train_step(batch, gamma=config.get('gamma', 0.99))
+  File "/home/ryan/lymapf/reptile_qmix/agent_trainer.py", line 186, in train_step
+    q_tot_eval = self.eval_mixer(eval_map_token, h_i_eval, chosen_q_eval, dones_t) # (B,)
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+Traceback (most recent call last):
+  File "/home/ryan/lymapf/reptile_qmix/networks.py", line 127, in forward
+    out_seq = self.transformer(seq, src_key_padding_mask=padding_mask) # (B, N+1, hidden_dim)
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/transformer.py", line 514, in forward
+    output = mod(
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/transformer.py", line 916, in forward
+    x = self.norm2(x + self._ff_block(x))
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/multiprocessing/process.py", line 314, in _bootstrap
+    self.run()
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/ryan/lymapf/reptile_qmix/worker_process.py", line 219, in persistent_worker_process
+    loss = trainer.train_step(batch, gamma=config.get('gamma', 0.99))
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/normalization.py", line 217, in forward
+    return F.layer_norm(
+  File "/home/ryan/lymapf/reptile_qmix/agent_trainer.py", line 206, in train_step
+    q_tot_target = self.target_mixer(target_map_token, h_i_target, chosen_q_target, dones_t) # (B,)
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/functional.py", line 2910, in layer_norm
+    return torch.layer_norm(
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/ryan/lymapf/reptile_qmix/networks.py", line 127, in forward
+    out_seq = self.transformer(seq, src_key_padding_mask=padding_mask) # (B, N+1, hidden_dim)
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/transformer.py", line 514, in forward
+    output = mod(
+KeyboardInterrupt
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/transformer.py", line 914, in forward
+    + self._sa_block(x, src_mask, src_key_padding_mask, is_causal=is_causal)
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/transformer.py", line 928, in _sa_block
+    x = self.self_attn(
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 1373, in forward
+    attn_output, attn_output_weights = F.multi_head_attention_forward(
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/nn/functional.py", line 6410, in multi_head_attention_forward
+    attn_output = scaled_dot_product_attention(
+KeyboardInterrupt
+Process Process-8:
+Traceback (most recent call last):
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/multiprocessing/process.py", line 314, in _bootstrap
+    self.run()
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/ryan/lymapf/reptile_qmix/worker_process.py", line 218, in persistent_worker_process
+    batch = buffer.sample(batch_size)
+KeyboardInterrupt
+Process Process-6:
+Traceback (most recent call last):
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/multiprocessing/process.py", line 314, in _bootstrap
+    self.run()
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/ryan/lymapf/reptile_qmix/worker_process.py", line 218, in persistent_worker_process
+    batch = buffer.sample(batch_size)
+KeyboardInterrupt
+Process Process-7:
+Traceback (most recent call last):
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/multiprocessing/process.py", line 314, in _bootstrap
+    self.run()
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/ryan/lymapf/reptile_qmix/worker_process.py", line 219, in persistent_worker_process
+    loss = trainer.train_step(batch, gamma=config.get('gamma', 0.99))
+  File "/home/ryan/lymapf/reptile_qmix/agent_trainer.py", line 246, in train_step
+    self.scaler.scale(loss).backward()
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/_tensor.py", line 648, in backward
+    torch.autograd.backward(
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/autograd/__init__.py", line 353, in backward
+    _engine_run_backward(
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/autograd/graph.py", line 824, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+KeyboardInterrupt
+Process Process-3:
+Traceback (most recent call last):
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/multiprocessing/process.py", line 314, in _bootstrap
+    self.run()
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/ryan/lymapf/reptile_qmix/worker_process.py", line 219, in persistent_worker_process
+    loss = trainer.train_step(batch, gamma=config.get('gamma', 0.99))
+  File "/home/ryan/lymapf/reptile_qmix/agent_trainer.py", line 246, in train_step
+    self.scaler.scale(loss).backward()
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/_tensor.py", line 648, in backward
+    torch.autograd.backward(
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/autograd/__init__.py", line 353, in backward
+    _engine_run_backward(
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/autograd/graph.py", line 824, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+KeyboardInterrupt
+Process Process-2:
+Traceback (most recent call last):
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/multiprocessing/process.py", line 314, in _bootstrap
+    self.run()
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/ryan/lymapf/reptile_qmix/worker_process.py", line 219, in persistent_worker_process
+    loss = trainer.train_step(batch, gamma=config.get('gamma', 0.99))
+  File "/home/ryan/lymapf/reptile_qmix/agent_trainer.py", line 246, in train_step
+    self.scaler.scale(loss).backward()
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/_tensor.py", line 648, in backward
+    torch.autograd.backward(
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/autograd/__init__.py", line 353, in backward
+    _engine_run_backward(
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/autograd/graph.py", line 824, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+KeyboardInterrupt
+Process Process-4:
+Traceback (most recent call last):
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/multiprocessing/process.py", line 314, in _bootstrap
+    self.run()
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/ryan/lymapf/reptile_qmix/worker_process.py", line 219, in persistent_worker_process
+    loss = trainer.train_step(batch, gamma=config.get('gamma', 0.99))
+  File "/home/ryan/lymapf/reptile_qmix/agent_trainer.py", line 246, in train_step
+    self.scaler.scale(loss).backward()
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/_tensor.py", line 648, in backward
+    torch.autograd.backward(
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/autograd/__init__.py", line 353, in backward
+    _engine_run_backward(
+  File "/home/ryan/anaconda3/envs/RPDRQNTrain/lib/python3.10/site-packages/torch/autograd/graph.py", line 824, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+KeyboardInterrupt
+Saved Checkpoint to ./models/ at Meta-Iteration 5350
+Meta-Training Complete and resources cleaned up.

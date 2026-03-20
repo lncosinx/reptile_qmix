@@ -28,7 +28,7 @@ if __name__ == '__main__':
     # -------------------------------------------------------------
     config = {
         'num_workers': 8,
-        'meta_iterations': 6400,
+        'meta_iterations': 8000,
         'alpha_meta': 0.001,          
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
         # ... [保留你原有的其他配置] ...

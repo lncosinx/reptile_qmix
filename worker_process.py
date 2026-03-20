@@ -185,7 +185,7 @@ def persistent_worker_process(worker_id, global_models, task_queue, result_queue
                     obs=np.array(obs, dtype=np.float32),
                     next_obs=next_obs,
                     actions=np.array(actions, dtype=np.int64),
-                    alignment_config={"use_alignment": True, "value": 0.1},
+                    alignment_config={"use_alignment": False, "value": 0.1},
                     stop_penalty_config={"use_stop_penalty": True, "value": 0.01},
                     step_penalty_config={"use_step_penalty": True, "value": 0.01},
                     goal_reward_multiple=100.0
