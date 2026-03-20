@@ -1,0 +1,49 @@
+import torch
+import torch.multiprocessing as mp
+import traceback
+import sys
+
+def mock_worker(q, shared_tensor):
+    try:
+        print("[Worker] 1. 子进程启动成功！")
+        
+        # 测试 1: 能否读取主进程的共享内存？(最容易因为 /dev/shm 爆满而挂掉的地方)
+        val = shared_tensor.sum().item()
+        print(f"[Worker] 2. 成功读取共享内存，测试值: {val}")
+        
+        # 测试 2: 能否在 Spawn 模式下安全初始化 CUDA？
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        x = torch.randn(10).to(device)
+        print(f"[Worker] 3. {device.upper()} 初始化成功！")
+        
+        q.put("SUCCESS")
+    except Exception as e:
+        print(f"\n[Worker 致命崩溃] 详情如下:\n{traceback.format_exc()}\n")
+        q.put("ERROR")
+
+if __name__ == '__main__':
+    # 强制复刻你代码里的启动方式
+    mp.set_start_method('spawn', force=True)
+    print("[Main] Spawn 模式设置成功。")
+    
+    try:
+        # 复刻你代码里的 share_memory 逻辑
+        print("[Main] 正在分配模拟共享内存...")
+        # 申请大约 40MB 的内存，模拟你的模型大小
+        t = torch.ones(3000, 3000).cpu() 
+        t.share_memory_()
+        print("[Main] 共享内存分配成功！")
+        
+        q = mp.Queue()
+        p = mp.Process(target=mock_worker, args=(q, t))
+        p.start()
+        
+        print("[Main] 正在等待 Worker 返回结果...")
+        res = q.get(timeout=20)  # 只等20秒
+        print(f"[Main] 收到 Worker 返回值: {res}")
+        
+        p.join()
+    except mp.queues.Empty:
+        print("\n[Main 警报] 等待超时！Worker 进程绝对是静默闪退了！")
+    except Exception as e:
+        print(f"[Main 报错] {e}")
