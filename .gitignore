@@ -4,7 +4,7 @@ __pycache__
 .venv
 .vscode
 .idea
-*.log
+
 *.pt
 *.pth
 *.tar.gz
@@ -26,3 +26,4 @@ __pycache__
 *.a
 *.lib
 *.obj
+*.models

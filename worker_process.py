@@ -214,7 +214,7 @@ def persistent_worker_process(worker_id, global_models, task_queue, result_queue
 
             # Perform Local Update using TBPTT
             if buffer.len() >= batch_size:
-                for _ in range(16): 
+                for _ in range(4): 
                     batch = buffer.sample(batch_size)
                     loss = trainer.train_step(batch, gamma=config.get('gamma', 0.99))
                     total_loss += loss

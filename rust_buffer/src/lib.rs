@@ -382,7 +382,7 @@ impl RustRewardCalculator {
                     did_move = false; // 确实没动
                 }
                 if action != 0 && !did_move {
-                    // r_val -= 0.15;也许应该允许模型去犯错
+                    r_val -= 0.1;
                 }
             }
 

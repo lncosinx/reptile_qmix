@@ -29,7 +29,7 @@ if __name__ == '__main__':
     config = {
         'num_workers': 8,
         'meta_iterations': 6400,
-        'alpha_meta': 0.1,          
+        'alpha_meta': 0.001,          
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
         # ... [保留你原有的其他配置] ...
         'num_agents': 8,
@@ -38,7 +38,7 @@ if __name__ == '__main__':
         'num_actions': 5,           
         'hidden_dim': 128,
         # Inner-loop Hyperparameters
-        'inner_epochs': 128,
+        'inner_epochs': 48,
         'batch_size': 32,
         'seq_len': 120,             # For TBPTT Burn-in and Learn phases
         'buffer_capacity': 1000,
