@@ -63,7 +63,7 @@ class AgentTrainer:
 
         if not isinstance(obs, torch.Tensor):
             obs = torch.tensor(obs, dtype=torch.float32, device=self.device)
-            current_n = obs.shape[0]
+            current_n = obs.shape[0] # 智能体数量
         with torch.no_grad():
             # Get Q-values from DRQN
             q_values, _, new_hidden_state = self.eval_drqn(obs, hidden_state) # q_values: (N, num_actions)
