@@ -15,57 +15,41 @@ def get_generated_map_grid(difficulty_ratio, map_type_config=None, seed=None):
     if seed is None:
         seed = random.randint(0, 10_000)
     
-    # ================= 1. 尺寸控制：改为线性 =================
+    # ================= 1. 尺寸与智能体动态控制 (课程学习) =================
     min_size = 15
     max_size = 25
     
-    # 这样模型有充足的时间适应中等大小的地图
-    adjusted_ratio = difficulty_ratio 
-    
-    current_size = int(min_size + (max_size - min_size) * adjusted_ratio)
-    
+    # 地图尺寸线性增长
+    current_size = int(min_size + (max_size - min_size) * difficulty_ratio)
     width = random.randint(max(6, current_size - 2), current_size + 2)
     height = random.randint(max(6, current_size - 2), current_size + 2)
 
+    # 智能体数量线性增长：从早期的 8 个平滑增加到后期的 32 个
+    min_agents = 8
+    max_agents = 32
+    current_agents = int(min_agents + (max_agents - min_agents) * difficulty_ratio)
+
     # ================= 2. 步数控制 =================
-    max_episode_steps = 128 
+    # 同步修改为 256，匹配你 yaml 测试文件中的长远规划需求
+    max_episode_steps = 256 
+    
     # ================= 3. 地图类型控制 =================    
     weights = [0.27, 0.05, 0.33, 0.35] 
     map_type = random.choices(['random', 'warehouse', 'house', 'maze'], weights=weights, k=1)[0]
-        
-    #测试指定地图类型
     map_type = map_type_config if map_type_config is not None else map_type
     
     map_str = ""
     if map_type == 'maze':
-        map_str = MazeGenerator.generate_maze(width=width, 
-                                              height=height, 
-                                              obstacle_density=random.uniform(0.2, 0.4), 
-                                              wall_components=random.randint(2, 8), 
-                                              go_straight=random.uniform(0.7, 0.9), 
-                                              seed=seed)
+        map_str = MazeGenerator.generate_maze(width=width, height=height, obstacle_density=random.uniform(0.2, 0.4), wall_components=random.randint(2, 8), go_straight=random.uniform(0.7, 0.9), seed=seed)
     elif map_type == 'random':
-        map_str = generate_random_map({"width": width, 
-                                       "height": height, 
-                                       "obstacle_density": 0.2 + (0.2 * difficulty_ratio), 
-                                       "seed": seed})
+        map_str = generate_random_map({"width": width, "height": height, "obstacle_density": 0.2 + (0.2 * difficulty_ratio), "seed": seed})
     elif map_type == 'house':
-         map_str = HouseGenerator.generate(width=width, 
-                                           height=height, 
-                                           obstacle_ratio=random.randint(4, 6), 
-                                           remove_edge_ratio=random.randint(4, 8), 
-                                           seed=seed)
+         map_str = HouseGenerator.generate(width=width, height=height, obstacle_ratio=random.randint(4, 6), remove_edge_ratio=random.randint(4, 8), seed=seed)
     elif map_type == 'warehouse':
-        cfg = WarehouseConfig(wall_width=random.randint(3, 6), 
-                              wall_height=random.randint(2, 3), 
-                              walls_in_row=random.randint(2, 4), 
-                              walls_rows=random.randint(2, 4), 
-                              bottom_gap=random.randint(1, 3), 
-                              horizontal_gap=random.randint(1, 2), 
-                              vertical_gap=random.randint(2, 3))
+        cfg = WarehouseConfig(wall_width=random.randint(3, 6), wall_height=random.randint(2, 3), walls_in_row=random.randint(2, 4), walls_rows=random.randint(2, 4), bottom_gap=random.randint(1, 3), horizontal_gap=random.randint(1, 2), vertical_gap=random.randint(2, 3))
         map_str = generate_wfi_warehouse(cfg)
 
-    return map_str, map_type, seed, max_episode_steps
+    return map_str, map_type, seed, max_episode_steps, current_agents
 
 
 def persistent_worker_process(worker_id, global_models, task_queue, result_queue, config):
@@ -94,7 +78,9 @@ def persistent_worker_process(worker_id, global_models, task_queue, result_queue
         lr=config.get('inner_lr', 1e-4)
     )
 
-    reward_calculator = RustRewardCalculator(num_agents)
+    # 用于记录当前 Reward Calculator 绑定的智能体数量
+    current_calculator_agents = None
+    reward_calculator = None
 
     # ---------------------------------------------------------
     # 2. 常驻循环 (Inner-loop 执行区)
@@ -123,11 +109,15 @@ def persistent_worker_process(worker_id, global_models, task_queue, result_queue
         # ---------------------------------------------------------
         # 环境与 Buffer 初始化 (每轮 Meta-Iter 需要重置，因为地图大小可能变化)
         # ---------------------------------------------------------
-        map_str, map_type, seed, max_episode_steps = get_generated_map_grid(difficulty_ratio=progress)
+        map_str, map_type, seed, max_episode_steps, current_num_agents = get_generated_map_grid(difficulty_ratio=progress)
+
+        if current_calculator_agents != current_num_agents:
+            reward_calculator = RustRewardCalculator(current_num_agents)
+            current_calculator_agents = current_num_agents
 
         grid_config = GridConfig(
             map=map_str,
-            num_agents=num_agents,                  
+            num_agents=current_num_agents,                  
             observation_radius=5,          
             on_target='finish',            
             max_episode_steps=max_episode_steps,
@@ -135,7 +125,7 @@ def persistent_worker_process(worker_id, global_models, task_queue, result_queue
         )
 
         raw_env = pogema_v0(grid_config=grid_config)
-        env = NativePogemaWrapper(raw_env, num_agents)
+        env = NativePogemaWrapper(raw_env, current_num_agents)
 
         # Extract map shapes by doing a dummy reset
         obs, info = env.reset()
@@ -147,7 +137,7 @@ def persistent_worker_process(worker_id, global_models, task_queue, result_queue
         buffer = RustReplayBuffer(
             capacity=config.get('buffer_capacity', 1000),
             seq_len=seq_len,
-            num_agents=num_agents,
+            num_agents=current_num_agents,
             obs_shape=obs_shape,
             global_map_shape=global_map_shape
         )

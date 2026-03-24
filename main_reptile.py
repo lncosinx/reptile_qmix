@@ -28,11 +28,11 @@ if __name__ == '__main__':
     # -------------------------------------------------------------
     config = {
         'num_workers': 8,
-        'meta_iterations': 8000,
+        'meta_iterations': 16000,
         'alpha_meta': 0.001,          
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
         # ... [保留你原有的其他配置] ...
-        'num_agents': 8,
+        'num_agents': 8, # 初始智能体数量，但是会随着课程进度增加
         'obs_channels': 3,          
         'map_channels': 1,          
         'num_actions': 5,           
@@ -102,6 +102,8 @@ if __name__ == '__main__':
             # 课程学习进度
             config['curr_progress'] = meta_iter / max(1, (config['meta_iterations'] - 1))
 
+            current_alpha = config['alpha_meta'] * (1.0 - config['curr_progress'])
+
             # 步骤 A：下发任务信号 (只传非常轻量的数据)
             for w_id in range(config['num_workers']):
                 task_msg = {
@@ -127,9 +129,9 @@ if __name__ == '__main__':
                 total_success += metrics['success_rate']
 
             # 步骤 C：执行 Reptile 元更新
-            meta_update(global_drqn, deltas_drqn, config['alpha_meta'])
-            meta_update(global_map_encoder, deltas_map_encoder, config['alpha_meta'])
-            meta_update(global_mixer, deltas_mixer, config['alpha_meta'])
+            meta_update(global_drqn, deltas_drqn, current_alpha)
+            meta_update(global_map_encoder, deltas_map_encoder, current_alpha)
+            meta_update(global_mixer, deltas_mixer, current_alpha)
 
             # 步骤 D：日志与保存
             avg_loss = total_loss / config['num_workers']
