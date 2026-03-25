@@ -6,7 +6,7 @@ __pycache__
 .idea
 
 *.pt
-*.pth
+.pth
 *.tar.gz
 *.zip
 *.rar
