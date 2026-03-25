@@ -41,6 +41,13 @@ class MyQMIXPolicy:
         
         print(f"RQTMIX 策略初始化完成。当前推理设备: {self.device}")
 
+    def reset_states(self):
+        """
+        官方工具箱必需的接口。
+        在每个新的 Episode 开始前，工具箱会自动调用这里，清空 RNN 的记忆。
+        """
+        self.hidden_state = None
+
     def act(self, observations, rewards, dones, info, **kwargs):
         num_agents = len(observations)
         

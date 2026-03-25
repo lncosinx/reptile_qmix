@@ -67,5 +67,14 @@ VS Code 会将服务器上的该端口映射到你本地。
 export http_proxy=http://127.0.0.1:10808
 export https_proxy=http://127.0.0.1:10808
 ```
-
+微调与测试
+微调：
+```bash
+python -u fine_tune.py
+```
+测试：
+```bash
+python -u run_benchmark.py
+```  
+注意，由于pogema官方硬编码了map的路径，所以请把需要测试的map.yaml放在reptile_qmix/pogema-toolbox/pogema_toolbox/maps文件夹下
 
