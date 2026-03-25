@@ -29,7 +29,8 @@ if __name__ == '__main__':
     config = {
         'num_workers': 8,
         'meta_iterations': 16000,
-        'alpha_meta': 0.001,          
+        'alpha_meta_start': 0.01,     # 激进的起步学习率
+        'alpha_meta_end': 0.0005,        
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
         # ... [保留你原有的其他配置] ...
         'num_agents': 8, # 初始智能体数量，但是会随着课程进度增加
@@ -45,7 +46,7 @@ if __name__ == '__main__':
         'inner_lr': 1e-4,
         'gamma': 0.99,
         'epsilon': 0.1,
-        'max_steps': 128,
+        'max_steps': 256,
         'env_name': 'Pogema-8x8-normal-v0' # Will be dynamically masked/changed in workers ideally
     }
 
@@ -102,7 +103,7 @@ if __name__ == '__main__':
             # 课程学习进度
             config['curr_progress'] = meta_iter / max(1, (config['meta_iterations'] - 1))
 
-            current_alpha = config['alpha_meta'] * (1.0 - config['curr_progress'])
+            current_alpha = config['alpha_meta_start'] - (config['alpha_meta_start'] - config['alpha_meta_end']) * config['curr_progress']
 
             # 步骤 A：下发任务信号 (只传非常轻量的数据)
             for w_id in range(config['num_workers']):
@@ -145,7 +146,7 @@ if __name__ == '__main__':
             print(f"Meta-Iter {meta_iter+1}/{config['meta_iterations']} | "
                   f"Loss: {avg_loss:.4f} | Reward: {avg_reward:.4f} | Success: {avg_success:.2%}")
 
-            if (meta_iter + 1) % 50 == 0:
+            if (meta_iter + 1) % 1000 == 0:
                 torch.save(global_drqn.state_dict(), f'./models/global_drqn_iter_{meta_iter+1}.pth')
                 torch.save(global_map_encoder.state_dict(), f'./models/global_map_encoder_iter_{meta_iter+1}.pth')
                 torch.save(global_mixer.state_dict(), f'./models/global_mixer_iter_{meta_iter+1}.pth')

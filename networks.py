@@ -23,6 +23,20 @@ class SharedDRQN(nn.Module):
         )
         self.h_out = nn.Linear(hidden_dim, hidden_dim)
 
+    def init_hidden(self, batch_size):
+        """Initialize LSTM hidden states with zeros"""
+        # 动态获取当前模型张量所在的设备（CPU/CUDA）
+        device = next(self.parameters()).device
+        
+        # 动态获取 LSTM 的隐藏层维度 (自动对应你初始化时的 128)
+        hidden_dim = self.lstm.hidden_size
+        
+        # 生成初始隐藏状态
+        h = torch.zeros(batch_size, hidden_dim, device=device)
+        c = torch.zeros(batch_size, hidden_dim, device=device)
+        
+        return (h, c)
+
     def forward(self, obs, hidden_state):
         """
         obs: (B*N, C, 11, 11)
