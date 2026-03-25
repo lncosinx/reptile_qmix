@@ -63,24 +63,24 @@ class AgentTrainer:
 
         if not isinstance(obs, torch.Tensor):
             obs = torch.tensor(obs, dtype=torch.float32, device=self.device)
-
+            current_n = obs.shape[0] # 智能体数量
         with torch.no_grad():
             # Get Q-values from DRQN
             q_values, _, new_hidden_state = self.eval_drqn(obs, hidden_state) # q_values: (N, num_actions)
 
             # Epsilon-greedy exploration
             if torch.rand(1).item() < epsilon:
-                actions = torch.randint(0, self.num_actions, (self.num_agents,), device=self.device)
+                actions = torch.randint(0, self.num_actions, (current_n,), device=self.device)
             else:
                 actions = torch.argmax(q_values, dim=1) # (N,)
 
         return actions.cpu().numpy(), new_hidden_state
 
-    def init_hidden(self, batch_size=1):
+    def init_hidden(self, actual_batch_size):
         """Initialize LSTM hidden states with zeros"""
         # Batch size * Number of agents
-        h = torch.zeros(batch_size * self.num_agents, 128, device=self.device)
-        c = torch.zeros(batch_size * self.num_agents, 128, device=self.device)
+        h = torch.zeros(actual_batch_size, 128, device=self.device)
+        c = torch.zeros(actual_batch_size, 128, device=self.device)
         return (h, c)
 
     def train_step(self, batch, gamma=0.99):
@@ -123,8 +123,8 @@ class AgentTrainer:
 
         # Initialize hidden states
         # Shape: (B * N, hidden_dim)
-        eval_hidden = self.init_hidden(batch_size=B)
-        target_hidden = self.init_hidden(batch_size=B)
+        eval_hidden = self.init_hidden(actual_batch_size=B * N)
+        target_hidden = self.init_hidden(actual_batch_size=B * N)
 
         # -------------------------------------------------------------
         # 2. Burn-in Phase (Pre-warming LSTM)
