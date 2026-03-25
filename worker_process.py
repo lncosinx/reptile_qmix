@@ -153,7 +153,7 @@ def persistent_worker_process(worker_id, global_models, task_queue, result_queue
         for epoch in range(inner_epochs):
             obs, info = env.reset()
             obs = np.array(obs, dtype=np.float32)
-            hidden_state = trainer.init_hidden(actual_batch_size=1)
+            hidden_state = trainer.init_hidden(actual_batch_size=env.num_agents)
 
             episode_reward = 0.0
             done = False
