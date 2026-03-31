@@ -25,10 +25,10 @@ def get_generated_map_grid(difficulty_ratio, map_type_config=None, seed=None):
     height = random.randint(max(6, current_size - 2), current_size + 2)
 
     # 智能体数量线性增长：从早期的 8 个平滑增加到后期的 32 个
-    min_agents = 8
-    max_agents = 32
-    current_agents = int(min_agents + (max_agents - min_agents) * difficulty_ratio)
-
+    # min_agents = 8
+    # max_agents = 32
+    # current_agents = int(min_agents + (max_agents - min_agents) * difficulty_ratio) #到12个智能体的时候，显存就炸了
+    current_agents = 8
     # ================= 2. 步数控制 =================
     # 同步修改为 256，匹配你 yaml 测试文件中的长远规划需求
     max_episode_steps = 256 
