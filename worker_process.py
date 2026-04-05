@@ -21,9 +21,16 @@ def get_generated_map_grid(difficulty_ratio, map_type_config=None, size=None,see
     
     # 地图尺寸线性增长
     current_max_size = int(min_size + (max_size - min_size) * difficulty_ratio)
-    # 始终从 min_size (15) 开始随机采样，保证模型不会遗忘小地图
-    width = random.randint(min_size, current_max_size) if size is None else size
-    height = random.randint(min_size, current_max_size) if size is None else size
+    # 任务采样的“偏度”控制：防止灾难性遗忘，同时减轻负迁移
+    if random.random() < 0.8:
+        # 80% 的概率：聚焦在当前最难的前沿阵地 (滑动窗口的精髓)
+        width_min = max(min_size, current_max_size - 2)
+        width = random.randint(width_min, current_max_size) if size is None else size
+        height = random.randint(width_min, current_max_size) if size is None else size
+    else:
+        # 20% 的概率：在所有见过的历史尺寸中随机采样 (温习机制)
+        width = random.randint(min_size, current_max_size) if size is None else size
+        height = random.randint(min_size, current_max_size) if size is None else size
 
     # 智能体数量线性增长：从早期的 8 个平滑增加到后期的 32 个
     # min_agents = 8
