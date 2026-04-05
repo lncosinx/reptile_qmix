@@ -16,15 +16,22 @@ class AgentTrainer:
         # 1. Initialize Networks (Eval and Target for Double Q-learning)
         # -------------------------------------------------------------
 
+        # 假设你的 StaticMapEncoder 输出特征维度为 128 (具体请根据 networks.py 修改 state_dim)
+        state_feature_dim = 128 
+
+        # 切换成标准 MLP 版本的 QMIX (用于消融实验)
+        self.eval_mixer = StandardQMIXMixer(num_agents, state_dim=state_feature_dim).to(self.device)
+        self.target_mixer = StandardQMIXMixer(num_agents, state_dim=state_feature_dim).to(self.device)
+
         # Eval Networks
         self.eval_drqn = SharedDRQN(obs_channels, num_actions).to(self.device)
         self.eval_map_encoder = StaticMapEncoder(map_channels).to(self.device)
-        self.eval_mixer = TransformerMixer(num_agents).to(self.device)
+        # self.eval_mixer = TransformerMixer(num_agents).to(self.device)
 
         # Target Networks
         self.target_drqn = SharedDRQN(obs_channels, num_actions).to(self.device)
         self.target_map_encoder = StaticMapEncoder(map_channels).to(self.device)
-        self.target_mixer = TransformerMixer(num_agents).to(self.device)
+        # self.target_mixer = TransformerMixer(num_agents).to(self.device)
 
         # Load Eval weights into Target networks initially
         self.target_drqn.load_state_dict(self.eval_drqn.state_dict())
@@ -183,7 +190,7 @@ class AgentTrainer:
                 # Forward TransformerMixer (Eval) to get Q_tot
                 # Pass map_token, h_i, q_i, and dones
                 dones_t = dones[:, t] # (B, N)
-                q_tot_eval = self.eval_mixer(eval_map_token, h_i_eval, chosen_q_eval, dones_t) # (B,)
+                q_tot_eval = self.eval_mixer(chosen_q_eval, eval_map_token, dones_t).squeeze(-1) # -> (B,)
                 q_evals.append(q_tot_eval)
 
                 # --- Double Q-Learning Target Calculation ---
@@ -203,7 +210,7 @@ class AgentTrainer:
                     # Mixer (Target)
                     # Next state dones (for target masking).
                     # Note: if the state was already done at t, it remains done.
-                    q_tot_target = self.target_mixer(target_map_token, h_i_target, chosen_q_target, dones_t) # (B,)
+                    q_tot_target = self.target_mixer(chosen_q_target, target_map_token, dones_t).squeeze(-1) # -> (B,)
 
                     # Calculate TD Target: R_tot + gamma * Q_tot_target (if not fully done)
                     # Here we sum the rewards across agents for the centralized Q_tot

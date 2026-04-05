@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from networks import SharedDRQN, StaticMapEncoder, TransformerMixer, StandardQMIXMixer
+from networks import SharedDRQN
 
 class AgentTrainer:
     def __init__(self, obs_channels, num_actions, map_channels, num_agents, device='cuda', lr=1e-4):
@@ -18,24 +18,24 @@ class AgentTrainer:
 
         # Eval Networks
         self.eval_drqn = SharedDRQN(obs_channels, num_actions).to(self.device)
-        self.eval_map_encoder = StaticMapEncoder(map_channels).to(self.device)
-        self.eval_mixer = TransformerMixer(num_agents).to(self.device)
+        # self.eval_map_encoder = StaticMapEncoder(map_channels).to(self.device)
+        # self.eval_mixer = TransformerMixer(num_agents).to(self.device)
 
         # Target Networks
         self.target_drqn = SharedDRQN(obs_channels, num_actions).to(self.device)
-        self.target_map_encoder = StaticMapEncoder(map_channels).to(self.device)
-        self.target_mixer = TransformerMixer(num_agents).to(self.device)
+        # self.target_map_encoder = StaticMapEncoder(map_channels).to(self.device)
+        # self.target_mixer = TransformerMixer(num_agents).to(self.device)
 
         # Load Eval weights into Target networks initially
         self.target_drqn.load_state_dict(self.eval_drqn.state_dict())
-        self.target_map_encoder.load_state_dict(self.eval_map_encoder.state_dict())
-        self.target_mixer.load_state_dict(self.eval_mixer.state_dict())
+        # self.target_map_encoder.load_state_dict(self.eval_map_encoder.state_dict())
+        # self.target_mixer.load_state_dict(self.eval_mixer.state_dict())
 
         # We only optimize the Evaluation networks
         self.optimizer = torch.optim.Adam(
-            list(self.eval_drqn.parameters()) +
-            list(self.eval_map_encoder.parameters()) +
-            list(self.eval_mixer.parameters()),
+            list(self.eval_drqn.parameters()) ,
+            # list(self.eval_map_encoder.parameters()) +
+            # list(self.eval_mixer.parameters()),
             lr=lr
         )
 
@@ -44,11 +44,11 @@ class AgentTrainer:
         for target_param, eval_param in zip(self.target_drqn.parameters(), self.eval_drqn.parameters()):
             target_param.data.copy_(tau * eval_param.data + (1.0 - tau) * target_param.data)
 
-        for target_param, eval_param in zip(self.target_map_encoder.parameters(), self.eval_map_encoder.parameters()):
-            target_param.data.copy_(tau * eval_param.data + (1.0 - tau) * target_param.data)
+        # for target_param, eval_param in zip(self.target_map_encoder.parameters(), self.eval_map_encoder.parameters()):
+        #     target_param.data.copy_(tau * eval_param.data + (1.0 - tau) * target_param.data)
 
-        for target_param, eval_param in zip(self.target_mixer.parameters(), self.eval_mixer.parameters()):
-            target_param.data.copy_(tau * eval_param.data + (1.0 - tau) * target_param.data)
+        # for target_param, eval_param in zip(self.target_mixer.parameters(), self.eval_mixer.parameters()):
+        #     target_param.data.copy_(tau * eval_param.data + (1.0 - tau) * target_param.data)
 
     def select_actions(self, obs, hidden_state, epsilon=0.0):
         """
@@ -97,8 +97,8 @@ class AgentTrainer:
                - global_maps: (B, C_g, H_g, W_g)  # Notice: Only 1 global map per episode
         """
         self.eval_drqn.train()
-        self.eval_map_encoder.train()
-        self.eval_mixer.train()
+        # self.eval_map_encoder.train()
+        # self.eval_mixer.train()
 
         # 1. Extract Batch Data and Move to Device
         states = torch.tensor(batch['states'], dtype=torch.float32, device=self.device)
@@ -154,10 +154,10 @@ class AgentTrainer:
         # global_maps shape: (B, C_g, H_g, W_g)
         # with torch.cuda.amp.autocast(enabled=self.use_scaler):   #由于cuda版本问题，cuda版本较新时，请注释此行，恢复下行
         with torch.amp.autocast('cuda', enabled=self.use_scaler):
-            eval_map_token = self.eval_map_encoder(global_maps) # (B, 1, hidden_dim)
+            # eval_map_token = self.eval_map_encoder(global_maps) # (B, 1, hidden_dim)
 
-            with torch.no_grad():
-                target_map_token = self.target_map_encoder(global_maps) # (B, 1, hidden_dim)
+            # with torch.no_grad():
+            #     target_map_token = self.target_map_encoder(global_maps) # (B, 1, hidden_dim)
 
             # Lists to store Q-values and hidden states for the learning phase
             q_evals = []
@@ -183,8 +183,8 @@ class AgentTrainer:
                 # Forward TransformerMixer (Eval) to get Q_tot
                 # Pass map_token, h_i, q_i, and dones
                 dones_t = dones[:, t] # (B, N)
-                q_tot_eval = self.eval_mixer(eval_map_token, h_i_eval, chosen_q_eval, dones_t) # (B,)
-                q_evals.append(q_tot_eval)
+                # q_tot_eval = self.eval_mixer(eval_map_token, h_i_eval, chosen_q_eval, dones_t) # (B,)
+                q_evals.append(chosen_q_eval)
 
                 # --- Double Q-Learning Target Calculation ---
                 with torch.no_grad():
@@ -203,16 +203,16 @@ class AgentTrainer:
                     # Mixer (Target)
                     # Next state dones (for target masking).
                     # Note: if the state was already done at t, it remains done.
-                    q_tot_target = self.target_mixer(target_map_token, h_i_target, chosen_q_target, dones_t) # (B,)
+                    # q_tot_target = self.target_mixer(target_map_token, h_i_target, chosen_q_target, dones_t) # (B,)
 
                     # Calculate TD Target: R_tot + gamma * Q_tot_target (if not fully done)
                     # Here we sum the rewards across agents for the centralized Q_tot
-                    reward_tot_t = rewards[:, t].sum(dim=1) # (B,)
+                    reward_t = rewards[:, t]
 
                     # If all agents are done, no future reward
                     all_done_t = torch.all(dones_t == 1, dim=1).float() # (B,)
 
-                    td_target = reward_tot_t + gamma * (1 - all_done_t) * q_tot_target
+                    td_target = reward_t + gamma * (1 - dones_t) * chosen_q_target
                     q_targets.append(td_target)
 
             # -------------------------------------------------------------
@@ -227,16 +227,19 @@ class AgentTrainer:
 
             # 使用 Masked MSE Loss
             # F.mse_loss(reduction='none') 会返回每个元素的独立 loss，形状为 (B, learn_len)
-            element_wise_loss = F.mse_loss(q_evals, q_targets.detach(), reduction='none')
+            element_wise_loss = F.mse_loss(q_evals, q_targets.detach(), reduction='none') # (B, learn_len, N)
+
+            # learn_masks 原本是 (B, learn_len)，需要扩展一维来匹配 N
+            learn_masks_expanded = learn_masks.unsqueeze(-1) # (B, learn_len, 1)
             
-            # 掩码相乘，把 padding 的 garbage 产生的 loss 归零
-            masked_loss = element_wise_loss * learn_masks
+            # 掩码相乘
+            masked_loss = element_wise_loss * learn_masks_expanded # (B, learn_len, N)
             
-            # 先对时间维度 (dim=1) 求平均，再对 Batch 维度 (dim=0) 求平均
-            # 这样保证长短不同的 Episode 对梯度的贡献是均衡的
-            episode_valid_steps = learn_masks.sum(dim=1).clamp(min=1.0)
-            episode_losses = masked_loss.sum(dim=1) / episode_valid_steps
-            loss = episode_losses.mean()
+            # 先在时间维度求和，除以有效步数，得到每个 episode 中每个 agent 的平均 loss
+            episode_valid_steps = learn_masks[:, burn_in:].sum(dim=1).clamp(min=1.0).unsqueeze(-1) # (B, 1)
+            episode_agent_losses = masked_loss.sum(dim=1) / episode_valid_steps # (B, N)
+            # 最后对 Batch 和 Agent 维度求平均
+            loss = episode_agent_losses.mean()
 
         # Optimize
         self.optimizer.zero_grad()
@@ -248,9 +251,9 @@ class AgentTrainer:
             # 2. 关键！在裁剪梯度前必须先 unscale，否则裁剪阈值就错了
             self.scaler.unscale_(self.optimizer)
             torch.nn.utils.clip_grad_norm_(
-                list(self.eval_drqn.parameters()) +
-                list(self.eval_map_encoder.parameters()) +
-                list(self.eval_mixer.parameters()),
+                list(self.eval_drqn.parameters()) ,
+                # list(self.eval_map_encoder.parameters()) +
+                # list(self.eval_mixer.parameters()),
                 max_norm=10.0
             )
             
@@ -261,9 +264,9 @@ class AgentTrainer:
             # 兼容不使用 AMP 的情况
             loss.backward()
             torch.nn.utils.clip_grad_norm_(
-                list(self.eval_drqn.parameters()) +
-                list(self.eval_map_encoder.parameters()) +
-                list(self.eval_mixer.parameters()),
+                list(self.eval_drqn.parameters()) ,
+                # list(self.eval_map_encoder.parameters()) 
+                # list(self.eval_mixer.parameters()),
                 max_norm=10.0
             )
             self.optimizer.step()

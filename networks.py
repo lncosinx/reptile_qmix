@@ -177,3 +177,99 @@ class TransformerMixer(nn.Module):
         q_tot = q_tot.view(B) # (B,)
 
         return q_tot
+    
+
+class StandardQMIXMixer(nn.Module):
+    """
+    经典 QMIX 的 MLP 超网络混合器 (Ablation Baseline)
+    用于替换 TransformerMixer，验证注意力机制的空间推理优势。
+    """
+    def __init__(self, num_agents, state_dim=128, embed_dim=32, hypernet_embed=64):
+        super(StandardQMIXMixer, self).__init__()
+        self.n_agents = num_agents
+        self.state_dim = state_dim
+        self.embed_dim = embed_dim
+
+        # -------------------------------------------------------------
+        # Hypernetwork 1: 生成 W1 和 b1
+        # W1 必须非负，因此输出维度为 n_agents * embed_dim
+        # -------------------------------------------------------------
+        self.hyper_w_1 = nn.Sequential(
+            nn.Linear(self.state_dim, hypernet_embed),
+            nn.ReLU(),
+            nn.Linear(hypernet_embed, self.embed_dim * self.n_agents)
+        )
+        self.hyper_b_1 = nn.Linear(self.state_dim, self.embed_dim)
+
+        # -------------------------------------------------------------
+        # Hypernetwork 2: 生成 W2 和 b2 (用 V(s) 代替 b2)
+        # W2 必须非负，输出维度为 embed_dim * 1
+        # -------------------------------------------------------------
+        self.hyper_w_2 = nn.Sequential(
+            nn.Linear(self.state_dim, hypernet_embed),
+            nn.ReLU(),
+            nn.Linear(hypernet_embed, self.embed_dim)
+        )
+        # V(s) 作为最终的全局偏移量 (不需要非负约束)
+        self.V = nn.Sequential(
+            nn.Linear(self.state_dim, self.embed_dim),
+            nn.ReLU(),
+            nn.Linear(self.embed_dim, 1)
+        )
+
+    def forward(self, agent_qs, states, dones=None):
+        """
+        agent_qs: (Batch_Size, N_agents) - 每个智能体局部的 Q 值
+        states: (Batch_Size, State_Dim) - StaticMapEncoder 提取的全局地图特征向量
+        dones: (Batch_Size, N_agents) - 可选掩码，抹除已到达终点的 agent 的 Q 值
+        """
+        bs = agent_qs.size(0)
+
+        # 1. 展平全局状态为 1D 向量，丢弃拓扑结构 (这就是它的劣势所在)
+        states = states.view(bs, -1) 
+
+        # 2. 处理局部 Q 值掩码
+        if dones is not None:
+            agent_qs = agent_qs * (1.0 - dones)
+        
+        # 调整形状以进行批次矩阵乘法 (B, 1, N)
+        agent_qs = agent_qs.view(-1, 1, self.n_agents)
+
+        # -------------------------------------------------------------
+        # 第一层混合
+        # -------------------------------------------------------------
+        w1 = torch.abs(self.hyper_w_1(states)) # 绝对值激活，保证单调性
+        w1 = w1.view(-1, self.n_agents, self.embed_dim) # (B, N, Embed)
+        b1 = self.hyper_b_1(states).view(-1, 1, self.embed_dim) # (B, 1, Embed)
+
+        # F.elu 激活
+        hidden = F.elu(torch.bmm(agent_qs, w1) + b1) # (B, 1, Embed)
+
+        # -------------------------------------------------------------
+        # 第二层混合
+        # -------------------------------------------------------------
+        w2 = torch.abs(self.hyper_w_2(states)) # 绝对值激活，保证单调性
+        w2 = w2.view(-1, self.embed_dim, 1) # (B, Embed, 1)
+        v = self.V(states).view(-1, 1, 1) # (B, 1, 1)
+
+        # 计算总 Q 值 Q_tot
+        y = torch.bmm(hidden, w2) + v # (B, 1, 1)
+        q_tot = y.view(bs, -1) # (B, 1)
+
+        return q_tot
+
+class VDNMixer(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, q_i, dones):
+        """
+        q_i: (B, N)
+        dones: (B, N)
+        """
+        # 如果 agent 到达终点，其 Q 值不计入全局 Q
+        q_i_masked = q_i * (1.0 - dones)
+        
+        # VDN 的核心：直接求和
+        q_tot = torch.sum(q_i_masked, dim=1) # 输出 shape: (B,)
+        return q_tot

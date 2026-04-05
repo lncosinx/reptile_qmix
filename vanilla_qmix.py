@@ -4,8 +4,10 @@ import torch
 import numpy as np
 from pogema import pogema_v0, GridConfig
 from env_wrapper import NativePogemaWrapper
-from agent_trainer import AgentTrainer
+from agent_trainer_no_trans import AgentTrainer
 from rust_buffer import RustReplayBuffer, RustRewardCalculator
+from worker_process import get_generated_map_grid
+from networks import SharedDRQN, StaticMapEncoder, StandardQMIXMixer
 
 config_path = {
     'random': {
@@ -37,16 +39,17 @@ def load_yaml_configs(config_name):
 def fine_tune():
     # --- 微调超参数配置 ---
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-    META_MODEL_PATH_DRQN = './models/global_drqn_iter_4800.pth' # 请替换为实际的元模型路径
-    META_MODEL_PATH_ENCODER = './models/global_map_encoder_iter_4800.pth'
-    META_MODEL_PATH_MIXER = './models/global_mixer_iter_4800.pth'
+    META_MODEL_PATH_DRQN = './models/global_drqn_iter_9000.pth' # 请替换为实际的元模型路径
+    META_MODEL_PATH_ENCODER = './models/global_map_encoder_iter_9000.pth'
+    META_MODEL_PATH_MIXER = './models/global_mixer_iter_9000.pth'
     
-    INNER_EPOCHS = 512     # 微调回合数
+    INNER_EPOCHS = 100000     # 微调回合数
     UPDATE_ITERS = 4       # 每个 epoch 后从 Buffer 采样的更新次数
     BATCH_SIZE = 32
     SEQ_LEN = 120
-    BUFFER_CAPACITY = 1000
-    ALGORITHM_NAME = "Reptile-Finetuned"
+    BUFFER_CAPACITY = 4000
+    ALGORITHM_NAME = "Vanilla_QMIX"
+    
     
     os.makedirs('./models', exist_ok=True)
     maps_dict, map_names, num_agents_list, max_episode_steps = load_yaml_configs('random')
@@ -55,18 +58,24 @@ def fine_tune():
         # 初始化 Trainer (支持多智能体数量变化)
         trainer = AgentTrainer(
             obs_channels=3, map_channels=1, num_actions=5, 
-            num_agents=num_agents, device=DEVICE, lr=1e-4
+            num_agents=num_agents, device=DEVICE, lr=1e-5
         )
         reward_calculator = RustRewardCalculator(num_agents)
 
         for map_name in map_names:
             print(f"========== 开始微调: {map_name} | Agents: {num_agents} ==========")
-            map_str = maps_dict[map_name]
+            map_str, _, _, max_episode_steps,_ = get_generated_map_grid(0.0,'random',15,1)
+
+            # 对照组：随机初始化
+            global_drqn = SharedDRQN(3, 5).to(DEVICE)
+            global_map_encoder = StaticMapEncoder(1).to(DEVICE)
+            global_mixer = StandardQMIXMixer(num_agents, state_dim=128).to(DEVICE)
             
-            # 每次微调前，重置为 Meta 模型的全局权重
-            trainer.eval_drqn.load_state_dict(torch.load(META_MODEL_PATH_DRQN, map_location=DEVICE))
-            trainer.eval_map_encoder.load_state_dict(torch.load(META_MODEL_PATH_ENCODER, map_location=DEVICE))
-            trainer.eval_mixer.load_state_dict(torch.load(META_MODEL_PATH_MIXER, map_location=DEVICE))
+
+            trainer.eval_drqn.load_state_dict(global_drqn.state_dict())
+            trainer.eval_map_encoder.load_state_dict(global_map_encoder.state_dict())
+            trainer.eval_mixer.load_state_dict(global_mixer.state_dict())
+           
             
             trainer.target_drqn.load_state_dict(trainer.eval_drqn.state_dict())
             trainer.target_map_encoder.load_state_dict(trainer.eval_map_encoder.state_dict())
@@ -87,17 +96,23 @@ def fine_tune():
                                       global_map_shape=global_map_shape)
 
             # 内层微调循环
+            total_loss = 0.0
+            total_reward = 0.0
+            success_count = 0.0
+            episodes_run = 0
             for epoch in range(INNER_EPOCHS):
                 obs, _ = env.reset()
                 obs = np.array(obs, dtype=np.float32)
                 hidden_state = trainer.init_hidden(actual_batch_size=num_agents)
                 done = False
-                
+                native_arrivals = 0.0
+                episode_reward = 0.0
                 while not done:
                     actions, next_hidden_state = trainer.select_actions(obs, hidden_state, epsilon=0.1)
                     next_obs, rewards, dones, _, _ = env.step(actions)
                     next_obs = np.array(next_obs, dtype=np.float32)
                     
+                    native_arrivals += sum(rewards)
                     rewards = reward_calculator.calculate(
                         rewards=np.array(rewards, dtype=np.float32), obs=np.array(obs, dtype=np.float32),
                         next_obs=next_obs, actions=np.array(actions, dtype=np.int64),
@@ -108,10 +123,15 @@ def fine_tune():
                     )
                     
                     env.cache_step(obs, actions, rewards, next_obs, dones)
+                    episode_reward += sum(rewards)
                     obs = next_obs
                     hidden_state = next_hidden_state
                     
                     done = all(dones) if isinstance(dones, (list, tuple, np.ndarray)) else dones
+                
+                total_reward += episode_reward
+                episodes_run += 1
+                success_count += (native_arrivals / env.num_agents)
 
                 # Push to buffer and train
                 buffer.push(env.get_episode_data())
@@ -119,6 +139,13 @@ def fine_tune():
                     for _ in range(UPDATE_ITERS):
                         batch = buffer.sample(BATCH_SIZE)
                         loss = trainer.train_step(batch, gamma=0.99)
+                        total_loss += loss
+                    torch.cuda.empty_cache()
+            
+                print(f'epoch: {epoch},'
+                f'loss: {total_loss / max(1, (epoch - BATCH_SIZE + 1)) if epoch >= BATCH_SIZE else 0.0},'
+                f'reward: {total_reward / max(1, episodes_run)},'
+                f'success_rate: {success_count / max(1, episodes_run)}')
             
             # 保存微调后的 DRQN 模型
             save_path = f'./models/{ALGORITHM_NAME}_drqn_{map_name}_agents_{num_agents}.pth'
