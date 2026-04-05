@@ -20,9 +20,10 @@ def get_generated_map_grid(difficulty_ratio, map_type_config=None, size=None,see
     max_size = 25
     
     # 地图尺寸线性增长
-    current_size = int(min_size + (max_size - min_size) * difficulty_ratio)
-    width = random.randint(max(6, current_size - 2), current_size + 2) if size is None else size
-    height = random.randint(max(6, current_size - 2), current_size + 2) if size is None else size
+    current_max_size = int(min_size + (max_size - min_size) * difficulty_ratio)
+    # 始终从 min_size (15) 开始随机采样，保证模型不会遗忘小地图
+    width = random.randint(min_size, current_max_size) if size is None else size
+    height = random.randint(min_size, current_max_size) if size is None else size
 
     # 智能体数量线性增长：从早期的 8 个平滑增加到后期的 32 个
     # min_agents = 8
@@ -204,7 +205,7 @@ def persistent_worker_process(worker_id, global_models, task_queue, result_queue
 
             # Perform Local Update using TBPTT
             if buffer.len() >= batch_size:
-                for _ in range(4): 
+                for _ in range(1): 
                     batch = buffer.sample(batch_size)
                     loss = trainer.train_step(batch, gamma=config.get('gamma', 0.99))
                     total_loss += loss
