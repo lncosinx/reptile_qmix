@@ -154,10 +154,10 @@ class AgentTrainer:
         # global_maps shape: (B, C_g, H_g, W_g)
         # with torch.cuda.amp.autocast(enabled=self.use_scaler):   #由于cuda版本问题，cuda版本较新时，请注释此行，恢复下行
         with torch.amp.autocast('cuda', enabled=self.use_scaler):
-            eval_map_token = self.eval_map_encoder(global_maps) # (B, 1, hidden_dim)
+            # eval_map_token = self.eval_map_encoder(global_maps) # (B, 1, hidden_dim)
 
-            with torch.no_grad():
-                target_map_token = self.target_map_encoder(global_maps) # (B, 1, hidden_dim)
+            # with torch.no_grad():
+            #     target_map_token = self.target_map_encoder(global_maps) # (B, 1, hidden_dim)
 
             # Lists to store Q-values and hidden states for the learning phase
             q_evals = []
@@ -203,7 +203,7 @@ class AgentTrainer:
                     # Mixer (Target)
                     # Next state dones (for target masking).
                     # Note: if the state was already done at t, it remains done.
-                    q_tot_target = self.target_mixer(target_map_token, h_i_target, chosen_q_target, dones_t) # (B,)
+                    # q_tot_target = self.target_mixer(target_map_token, h_i_target, chosen_q_target, dones_t) # (B,)
 
                     # Calculate TD Target: R_tot + gamma * Q_tot_target (if not fully done)
                     # Here we sum the rewards across agents for the centralized Q_tot
@@ -230,7 +230,7 @@ class AgentTrainer:
             element_wise_loss = F.mse_loss(q_evals, q_targets.detach(), reduction='none') # (B, learn_len, N)
 
             # learn_masks 原本是 (B, learn_len)，需要扩展一维来匹配 N
-            learn_masks_expanded = learn_masks[:, burn_in:].unsqueeze(-1) # (B, learn_len, 1)
+            learn_masks_expanded = learn_masks.unsqueeze(-1) # (B, learn_len, 1)
             
             # 掩码相乘
             masked_loss = element_wise_loss * learn_masks_expanded # (B, learn_len, N)

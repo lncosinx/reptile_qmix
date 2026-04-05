@@ -48,7 +48,7 @@ def fine_tune():
     BATCH_SIZE = 32
     SEQ_LEN = 120
     BUFFER_CAPACITY = 4000
-    ALGORITHM_NAME = "Reptile-Finetuned"
+    ALGORITHM_NAME = "Vanilla_VDN"
     
     
     os.makedirs('./models', exist_ok=True)
@@ -70,7 +70,7 @@ def fine_tune():
             global_drqn = SharedDRQN(3, 5).to(DEVICE)
             global_map_encoder = StaticMapEncoder(1).to(DEVICE)
             # global_mixer = TransformerMixer(num_agents).to(DEVICE)
-            global_mixer = VDNMixer(num_agents).to(DEVICE)
+            global_mixer = VDNMixer().to(DEVICE)
 
             trainer.eval_drqn.load_state_dict(global_drqn.state_dict())
             trainer.eval_map_encoder.load_state_dict(global_map_encoder.state_dict())

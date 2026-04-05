@@ -48,7 +48,7 @@ def fine_tune():
     BATCH_SIZE = 32
     SEQ_LEN = 120
     BUFFER_CAPACITY = 4000
-    ALGORITHM_NAME = "Reptile-Finetuned"
+    ALGORITHM_NAME = "Reptile-QTMIX"
     
     
     os.makedirs('./models', exist_ok=True)

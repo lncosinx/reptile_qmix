@@ -190,7 +190,7 @@ class AgentTrainer:
                 # Forward TransformerMixer (Eval) to get Q_tot
                 # Pass map_token, h_i, q_i, and dones
                 dones_t = dones[:, t] # (B, N)
-                q_tot_eval = self.eval_mixer(eval_map_token, h_i_eval, chosen_q_eval, dones_t) # (B,)
+                q_tot_eval = self.eval_mixer(chosen_q_eval, eval_map_token, dones_t).squeeze(-1) # -> (B,)
                 q_evals.append(q_tot_eval)
 
                 # --- Double Q-Learning Target Calculation ---
@@ -210,7 +210,7 @@ class AgentTrainer:
                     # Mixer (Target)
                     # Next state dones (for target masking).
                     # Note: if the state was already done at t, it remains done.
-                    q_tot_target = self.target_mixer(target_map_token, h_i_target, chosen_q_target, dones_t) # (B,)
+                    q_tot_target = self.target_mixer(chosen_q_target, target_map_token, dones_t).squeeze(-1) # -> (B,)
 
                     # Calculate TD Target: R_tot + gamma * Q_tot_target (if not fully done)
                     # Here we sum the rewards across agents for the centralized Q_tot
