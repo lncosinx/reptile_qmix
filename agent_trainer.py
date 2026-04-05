@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from networks import SharedDRQN, StaticMapEncoder, TransformerMixer, StandardQMIXMixer
+from networks import SharedDRQN, ViTMapEncoder, TransformerMixer
 
 class AgentTrainer:
     def __init__(self, obs_channels, num_actions, map_channels, num_agents, device='cuda', lr=1e-4):
@@ -18,12 +18,12 @@ class AgentTrainer:
 
         # Eval Networks
         self.eval_drqn = SharedDRQN(obs_channels, num_actions).to(self.device)
-        self.eval_map_encoder = StaticMapEncoder(map_channels).to(self.device)
+        self.eval_map_encoder = ViTMapEncoder(map_channels).to(self.device)
         self.eval_mixer = TransformerMixer(num_agents).to(self.device)
 
         # Target Networks
         self.target_drqn = SharedDRQN(obs_channels, num_actions).to(self.device)
-        self.target_map_encoder = StaticMapEncoder(map_channels).to(self.device)
+        self.target_map_encoder = ViTMapEncoder(map_channels).to(self.device)
         self.target_mixer = TransformerMixer(num_agents).to(self.device)
 
         # Load Eval weights into Target networks initially

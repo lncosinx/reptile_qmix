@@ -3,7 +3,7 @@ import torch
 import torch.multiprocessing as mp
 from torch.utils.tensorboard import SummaryWriter
 
-from networks import SharedDRQN, StaticMapEncoder, TransformerMixer
+from networks import SharedDRQN, ViTMapEncoder, TransformerMixer
 # 注意：你需要将原来的 run_worker_task 改为常驻 worker 的逻辑
 from worker_process import persistent_worker_process
 
@@ -61,7 +61,7 @@ if __name__ == '__main__':
     # 建议将全局模型保留在 CPU 上进行 share_memory，Worker 拉取时再放到 GPU，
     # 这样可以最大程度避免多进程抢占同一块 GPU 显存导致的碎片化和 OOM。
     global_drqn = SharedDRQN(config['obs_channels'], config['num_actions']).cpu()
-    global_map_encoder = StaticMapEncoder(config['map_channels']).cpu()
+    global_map_encoder = ViTMapEncoder(config['map_channels']).cpu()
     global_mixer = TransformerMixer(config['num_agents']).cpu()
 
     global_drqn.share_memory()
