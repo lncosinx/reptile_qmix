@@ -273,3 +273,65 @@ class VDNMixer(nn.Module):
         # VDN 的核心：直接求和
         q_tot = torch.sum(q_i_masked, dim=1) # 输出 shape: (B,)
         return q_tot
+    
+class ViTMapEncoder(nn.Module):
+    def __init__(self, map_channels, hidden_dim=128, num_heads=4, num_layers=1):
+        super().__init__()
+        # 1. CNN 提取局部高级语义 (Patch Embedding 的前置特征)
+        self.cnn = nn.Sequential(
+            nn.Conv2d(map_channels, 32, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(64, hidden_dim, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+        )
+        
+        # 2. 将任意大小的地图自适应切分为 5x5 的网格 (总共 25 个 Patch)
+        self.grid_size = 5
+        self.num_patches = self.grid_size * self.grid_size
+        self.patch_pool = nn.AdaptiveAvgPool2d((self.grid_size, self.grid_size))
+        
+        # 3. ViT 核心组件
+        # 类别 Token (类似 ViT 的 [CLS] token)，用于汇聚全局信息
+        self.cls_token = nn.Parameter(torch.randn(1, 1, hidden_dim))
+        
+        # 位置编码 (Positional Encoding)：25 个 Patch + 1 个 CLS Token
+        self.pos_embed = nn.Parameter(torch.randn(1, self.num_patches + 1, hidden_dim))
+        
+        # Transformer Encoder 处理 Patch 之间的全局空间关系
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=hidden_dim, 
+            nhead=num_heads, 
+            dim_feedforward=hidden_dim * 2,
+            batch_first=True,
+            dropout=0.1
+        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        
+    def forward(self, global_map):
+        """
+        global_map: (B, C, H, W)
+        """
+        B, C, H, W = global_map.shape
+        
+        # --- 步骤 A: CNN 提取局部特征并生成 Patches ---
+        x = self.cnn(global_map)          # (B, hidden_dim, H, W)
+        x = self.patch_pool(x)            # (B, hidden_dim, 5, 5)
+        
+        # 展平空间维度，转换为 Sequence: (B, 25, hidden_dim)
+        x = x.flatten(2).transpose(1, 2)  
+        
+        # --- 步骤 B: 拼接 [CLS] Token 并加入位置编码 ---
+        cls_tokens = self.cls_token.expand(B, -1, -1)   # (B, 1, hidden_dim)
+        x = torch.cat((cls_tokens, x), dim=1)           # (B, 26, hidden_dim)
+        x = x + self.pos_embed                          # 加入空间位置信息
+        
+        # --- 步骤 C: Transformer 建立全局注意力机制 ---
+        x = self.transformer(x)                         # (B, 26, hidden_dim)
+        
+        # --- 步骤 D: 提取 [CLS] Token 作为最终的全局地图表征 ---
+        map_token = x[:, 0, :]                          # (B, hidden_dim)
+        
+        # 扩增维度以匹配后续 TransformerMixer 的输入要求: (B, 1, hidden_dim)
+        return map_token.unsqueeze(1)

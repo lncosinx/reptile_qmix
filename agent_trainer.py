@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from networks import SharedDRQN, StaticMapEncoder, TransformerMixer, StandardQMIXMixer
+from networks import SharedDRQN, ViTMapEncoder, TransformerMixer
 
 class AgentTrainer:
     def __init__(self, obs_channels, num_actions, map_channels, num_agents, device='cuda', lr=1e-4):
@@ -18,12 +18,12 @@ class AgentTrainer:
 
         # Eval Networks
         self.eval_drqn = SharedDRQN(obs_channels, num_actions).to(self.device)
-        self.eval_map_encoder = StaticMapEncoder(map_channels).to(self.device)
+        self.eval_map_encoder = ViTMapEncoder(map_channels).to(self.device)
         self.eval_mixer = TransformerMixer(num_agents).to(self.device)
 
         # Target Networks
         self.target_drqn = SharedDRQN(obs_channels, num_actions).to(self.device)
-        self.target_map_encoder = StaticMapEncoder(map_channels).to(self.device)
+        self.target_map_encoder = ViTMapEncoder(map_channels).to(self.device)
         self.target_mixer = TransformerMixer(num_agents).to(self.device)
 
         # Load Eval weights into Target networks initially
@@ -227,7 +227,8 @@ class AgentTrainer:
 
             # 使用 Masked MSE Loss
             # F.mse_loss(reduction='none') 会返回每个元素的独立 loss，形状为 (B, learn_len)
-            element_wise_loss = F.mse_loss(q_evals, q_targets.detach(), reduction='none')
+            # element_wise_loss = F.mse_loss(q_evals, q_targets.detach(), reduction='none')
+            element_wise_loss = F.smooth_l1_loss(q_evals, q_targets.detach(), reduction='none')
             
             # 掩码相乘，把 padding 的 garbage 产生的 loss 归零
             masked_loss = element_wise_loss * learn_masks

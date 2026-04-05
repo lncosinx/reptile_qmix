@@ -3,7 +3,7 @@ import torch
 import torch.multiprocessing as mp
 from torch.utils.tensorboard import SummaryWriter
 
-from networks import SharedDRQN, StaticMapEncoder, TransformerMixer
+from networks import SharedDRQN, ViTMapEncoder, TransformerMixer
 # 注意：你需要将原来的 run_worker_task 改为常驻 worker 的逻辑
 from worker_process import persistent_worker_process
 
@@ -28,7 +28,7 @@ if __name__ == '__main__':
     # -------------------------------------------------------------
     config = {
         'num_workers': 8,
-        'meta_iterations': 16000,
+        'meta_iterations': 30000,
         'alpha_meta_start': 0.01,     # 激进的起步学习率
         'alpha_meta_end': 0.001,        
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
@@ -39,8 +39,8 @@ if __name__ == '__main__':
         'num_actions': 5,           
         'hidden_dim': 128,
         # Inner-loop Hyperparameters
-        'inner_epochs': 48,
-        'batch_size': 32,
+        'inner_epochs': 16,
+        'batch_size': 8,
         'seq_len': 120,             # For TBPTT Burn-in and Learn phases
         'buffer_capacity': 1000,
         'inner_lr': 1e-4,
@@ -61,7 +61,7 @@ if __name__ == '__main__':
     # 建议将全局模型保留在 CPU 上进行 share_memory，Worker 拉取时再放到 GPU，
     # 这样可以最大程度避免多进程抢占同一块 GPU 显存导致的碎片化和 OOM。
     global_drqn = SharedDRQN(config['obs_channels'], config['num_actions']).cpu()
-    global_map_encoder = StaticMapEncoder(config['map_channels']).cpu()
+    global_map_encoder = ViTMapEncoder(config['map_channels']).cpu()
     global_mixer = TransformerMixer(config['num_agents']).cpu()
 
     global_drqn.share_memory()

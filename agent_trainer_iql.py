@@ -227,7 +227,8 @@ class AgentTrainer:
 
             # 使用 Masked MSE Loss
             # F.mse_loss(reduction='none') 会返回每个元素的独立 loss，形状为 (B, learn_len)
-            element_wise_loss = F.mse_loss(q_evals, q_targets.detach(), reduction='none') # (B, learn_len, N)
+            # element_wise_loss = F.mse_loss(q_evals, q_targets.detach(), reduction='none') # (B, learn_len, N)
+            element_wise_loss = F.smooth_l1_loss(q_evals, q_targets.detach(), reduction='none')
 
             # learn_masks 原本是 (B, learn_len)，需要扩展一维来匹配 N
             learn_masks_expanded = learn_masks.unsqueeze(-1) # (B, learn_len, 1)

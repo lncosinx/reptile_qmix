@@ -230,7 +230,8 @@ class AgentTrainer:
 
             # 使用 Masked MSE Loss
             # F.mse_loss(reduction='none') 会返回每个元素的独立 loss，形状为 (B, learn_len)
-            element_wise_loss = F.mse_loss(q_evals, q_targets.detach(), reduction='none')
+            # element_wise_loss = F.mse_loss(q_evals, q_targets.detach(), reduction='none')
+            element_wise_loss = F.smooth_l1_loss(q_evals, q_targets.detach(), reduction='none')
             
             # 掩码相乘，把 padding 的 garbage 产生的 loss 归零
             masked_loss = element_wise_loss * learn_masks
