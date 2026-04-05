@@ -11,7 +11,7 @@ from env_wrapper import NativePogemaWrapper
 from agent_trainer import AgentTrainer
 from rust_buffer import RustReplayBuffer, RustRewardCalculator
 
-def get_generated_map_grid(difficulty_ratio, map_type_config=None, seed=None):
+def get_generated_map_grid(difficulty_ratio, map_type_config=None, size=None,seed=None):
     if seed is None:
         seed = random.randint(0, 10_000)
     
@@ -21,8 +21,8 @@ def get_generated_map_grid(difficulty_ratio, map_type_config=None, seed=None):
     
     # 地图尺寸线性增长
     current_size = int(min_size + (max_size - min_size) * difficulty_ratio)
-    width = random.randint(max(6, current_size - 2), current_size + 2)
-    height = random.randint(max(6, current_size - 2), current_size + 2)
+    width = random.randint(max(6, current_size - 2), current_size + 2) if size is None else size
+    height = random.randint(max(6, current_size - 2), current_size + 2) if size is None else size
 
     # 智能体数量线性增长：从早期的 8 个平滑增加到后期的 32 个
     min_agents = 8

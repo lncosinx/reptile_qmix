@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from networks import SharedDRQN, StaticMapEncoder, TransformerMixer
+from networks import SharedDRQN, StaticMapEncoder, TransformerMixer, StandardQMIXMixer
 
 class AgentTrainer:
     def __init__(self, obs_channels, num_actions, map_channels, num_agents, device='cuda', lr=1e-4):

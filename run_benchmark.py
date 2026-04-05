@@ -6,6 +6,7 @@ import torch
 import numpy as np
 from pathlib import Path
 from pogema import pogema_v0, GridConfig, AnimationMonitor
+from worker_process import get_generated_map_grid
 
 # 导入你的模型和 Wrapper
 from networks import SharedDRQN 
@@ -60,7 +61,8 @@ def run_manual_benchmark():
     # ==========================================
     for num_agents in num_agents_list:
         for map_name in map_names:
-            map_str = maps_dict.get(map_name)
+            # map_str = maps_dict.get(map_name)
+            map_str, _, _, max_episode_steps,_ = get_generated_map_grid(0.0,'random',15,1)
             if not map_str:
                 print(f"⚠️ 在 maps.yaml 中未找到地图 {map_name}，跳过。")
                 continue

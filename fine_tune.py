@@ -37,11 +37,11 @@ def load_yaml_configs(config_name):
 def fine_tune():
     # --- 微调超参数配置 ---
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-    META_MODEL_PATH_DRQN = './models/global_drqn_iter_8000.pth' # 请替换为实际的元模型路径
-    META_MODEL_PATH_ENCODER = './models/global_map_encoder_iter_8000.pth'
-    META_MODEL_PATH_MIXER = './models/global_mixer_iter_8000.pth'
+    META_MODEL_PATH_DRQN = './models/global_drqn_iter_4800.pth' # 请替换为实际的元模型路径
+    META_MODEL_PATH_ENCODER = './models/global_map_encoder_iter_4800.pth'
+    META_MODEL_PATH_MIXER = './models/global_mixer_iter_4800.pth'
     
-    INNER_EPOCHS = 128      # 微调回合数
+    INNER_EPOCHS = 512     # 微调回合数
     UPDATE_ITERS = 4       # 每个 epoch 后从 Buffer 采样的更新次数
     BATCH_SIZE = 32
     SEQ_LEN = 120
