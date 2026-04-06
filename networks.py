@@ -76,6 +76,28 @@ class StaticMapEncoder(nn.Module):
         return map_token.unsqueeze(1) # (B, 1, hidden_dim)
 
 
+# 将原始的 coord_encoder 替换为带有高频投影的版本
+class SinusoidalCoordEncoder(nn.Module):
+    def __init__(self, hidden_dim=128):
+        super().__init__()
+        self.hidden_dim = hidden_dim
+        # 频率带，控制分辨率
+        self.register_buffer('inv_freq', 1.0 / (10000 ** (torch.arange(0, hidden_dim, 4).float() / hidden_dim)))
+
+    def forward(self, coords):
+        # coords: (..., 2) 包含 (x, y)
+        x, y = coords[..., 0], coords[..., 1]
+        
+        # 将 x 和 y 映射到高频空间
+        sin_x = torch.sin(x.unsqueeze(-1) * self.inv_freq)
+        cos_x = torch.cos(x.unsqueeze(-1) * self.inv_freq)
+        sin_y = torch.sin(y.unsqueeze(-1) * self.inv_freq)
+        cos_y = torch.cos(y.unsqueeze(-1) * self.inv_freq)
+        
+        # 拼接起来，彻底解决微小坐标无法区分的问题
+        pos_emb = torch.cat([sin_x, cos_x, sin_y, cos_y], dim=-1)
+        return pos_emb # 维度直接是 hidden_dim
+
 class TransformerMixer(nn.Module):
     def __init__(self, num_agents, hidden_dim=128, embed_dim=128, num_heads=4, mix_hidden_dim=32):
         super().__init__()
@@ -335,3 +357,117 @@ class ViTMapEncoder(nn.Module):
         
         # 扩增维度以匹配后续 TransformerMixer 的输入要求: (B, 1, hidden_dim)
         return map_token.unsqueeze(1)
+    
+class FusedCrossAttentionMixer(nn.Module):
+    def __init__(self, num_agents, map_channels, hidden_dim=128, num_heads=4):
+        super().__init__()
+        self.num_agents = num_agents
+        self.hidden_dim = hidden_dim
+        
+        # -------------------------------------------------------------
+        # 修复 4：使用大核与膨胀卷积，扩大感受野消除边界盲区
+        # -------------------------------------------------------------
+        self.map_cnn = nn.Sequential(
+            nn.Conv2d(map_channels, 32, kernel_size=5, stride=1, padding=2),
+            nn.ReLU(),
+            nn.Conv2d(32, hidden_dim, kernel_size=3, stride=1, padding=2, dilation=2),
+            nn.ReLU()
+        )
+        self.patch_pool = nn.AdaptiveAvgPool2d((5, 5))
+
+        # -------------------------------------------------------------
+        # 修复 2：调用真正的高频正弦坐标编码器！
+        # -------------------------------------------------------------
+        self.coord_encoder = SinusoidalCoordEncoder(hidden_dim)
+        
+        grid_x, grid_y = torch.meshgrid(
+            torch.linspace(0.1, 0.9, 5), 
+            torch.linspace(0.1, 0.9, 5), 
+            indexing='ij'
+        )
+        patch_coords = torch.stack([grid_x.flatten(), grid_y.flatten()], dim=1)
+        self.register_buffer('patch_coords', patch_coords)
+
+        self.query_feat_proj = nn.Linear(hidden_dim, hidden_dim)
+        
+        self.cross_attention = nn.MultiheadAttention(
+            embed_dim=hidden_dim, 
+            num_heads=num_heads, 
+            batch_first=True
+        )
+        
+        # -------------------------------------------------------------
+        # 修复 1：把可学习的高斯方差移到 __init__ 中！
+        # -------------------------------------------------------------
+        self.log_sigma = nn.Parameter(torch.tensor(-2.0))
+        
+        # QMIX Hypernetworks 保持不变
+        self.hyper_w1 = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, num_agents * hidden_dim) 
+        )
+        self.hyper_w2 = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim * 1) 
+        )
+        self.hyper_b1 = nn.Linear(hidden_dim, hidden_dim)
+        self.hyper_b2 = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1)
+        )
+
+    def forward(self, agent_qs, hidden_states, global_map, agent_coords):
+        B, seq_len, N = agent_qs.shape
+        
+        # --- 步骤 A: 提取地图 Patches ---
+        patches = self.map_cnn(global_map) 
+        patches = self.patch_pool(patches)
+        map_tokens = patches.flatten(2).transpose(1, 2)
+        map_tokens = map_tokens.unsqueeze(1).expand(-1, seq_len, -1, -1).reshape(B * seq_len, 25, self.hidden_dim)
+
+        patch_pos_embed = self.coord_encoder(self.patch_coords) 
+        map_tokens = map_tokens + patch_pos_embed.unsqueeze(0) 
+        
+        # --- 步骤 B: 处理智能体 (Queries) ---
+        hidden_flat = hidden_states.reshape(B * seq_len, N, self.hidden_dim)
+        coords_flat = agent_coords.reshape(B * seq_len, N, 2)
+        
+        agent_pos_embed = self.coord_encoder(coords_flat) 
+        queries = self.query_feat_proj(hidden_flat) + agent_pos_embed
+
+        # --- 步骤 C: 计算相对距离与高斯惩罚 Bias ---
+        q_coords = coords_flat.unsqueeze(2) 
+        k_coords = self.patch_coords.unsqueeze(0).unsqueeze(0) 
+        
+        dist_sq = torch.sum((q_coords - k_coords) ** 2, dim=-1) 
+        sigma_sq = torch.exp(self.log_sigma)
+        attn_bias = - (dist_sq / (2.0 * sigma_sq)) # (B*seq_len, N, 25)
+        
+        # -------------------------------------------------------------
+        # 修复 3：正确格式化并传入 attn_mask！
+        # PyTorch 的 MultiheadAttention 要求 float mask 被扩张到 batch * num_heads
+        # -------------------------------------------------------------
+        num_heads = self.cross_attention.num_heads
+        attn_mask = attn_bias.repeat_interleave(num_heads, dim=0) # (B*seq_len*num_heads, N, 25)
+        
+        # 传入 attn_mask，它会自动加到内积的结果上
+        attn_out, _ = self.cross_attention(query=queries, key=map_tokens, value=map_tokens, attn_mask=attn_mask)
+        
+        # --- 步骤 D: QMIX 混合计算 ---
+        global_context = attn_out.mean(dim=1) 
+        
+        agent_qs = agent_qs.reshape(B * seq_len, 1, self.num_agents) 
+        w1 = torch.abs(self.hyper_w1(global_context)) 
+        w1 = w1.reshape(B * seq_len, self.num_agents, self.hidden_dim)
+        b1 = self.hyper_b1(global_context).reshape(B * seq_len, 1, self.hidden_dim)
+        hidden = F.elu(torch.bmm(agent_qs, w1) + b1) 
+        
+        w2 = torch.abs(self.hyper_w2(global_context))
+        w2 = w2.reshape(B * seq_len, self.hidden_dim, 1)
+        b2 = self.hyper_b2(global_context).reshape(B * seq_len, 1, 1)
+        q_tot = torch.bmm(hidden, w2) + b2 
+        
+        return q_tot.reshape(B, seq_len, 1)
