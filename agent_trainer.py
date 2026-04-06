@@ -76,12 +76,12 @@ class AgentTrainer:
         c = torch.zeros(actual_batch_size, 128, device=self.device)
         return (h, c)
 
-    def train_step(self, batch, gamma=0.99, current_step=0, max_anneal_steps=2000):
-        # 🌟 Alpha 退火计算保持不变
-        start_alpha = 0.9
-        end_alpha = 0.0
-        progress = min(1.0, current_step / max_anneal_steps) 
-        alpha = start_alpha - progress * (start_alpha - end_alpha)
+    def train_step(self, batch, alpha=0.5, gamma=0.99):
+        # # 🌟 Alpha 退火计算保持不变
+        # start_alpha = 0.9
+        # end_alpha = 0.0
+        # progress = min(1.0, current_step / max_anneal_steps) 
+        # alpha = start_alpha - progress * (start_alpha - end_alpha)
 
         self.eval_drqn.train()
         self.eval_mixer.train()

@@ -102,7 +102,8 @@ def persistent_worker_process(worker_id, global_models, task_queue, result_queue
             break
             
         progress = task['curr_progress']
-
+        # 🌟 提取主进程下发的 alpha
+        mix_alpha = task.get('mix_alpha', 0.5)
         # 从共享内存中的全局模型拉取最新权重
         # load_state_dict 会自动将 CPU 上的 shared weights 转移至当前 Trainer 所在的 GPU
         trainer.eval_drqn.load_state_dict(global_models['drqn'].state_dict())
@@ -213,7 +214,7 @@ def persistent_worker_process(worker_id, global_models, task_queue, result_queue
             if buffer.len() >= batch_size:
                 for _ in range(1): 
                     batch = buffer.sample(batch_size)
-                    loss = trainer.train_step(batch, gamma=config.get('gamma', 0.99))
+                    loss = trainer.train_step(batch, alpha=mix_alpha, gamma=config.get('gamma', 0.99))
                     total_loss += loss
                 torch.cuda.empty_cache()
 

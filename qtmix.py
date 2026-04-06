@@ -58,7 +58,7 @@ def fine_tune():
         # 初始化 Trainer (支持多智能体数量变化)
         trainer = AgentTrainer(
             obs_channels=3, map_channels=1, num_actions=5, 
-            num_agents=num_agents, device=DEVICE, lr=1e-5
+            num_agents=num_agents, device=DEVICE, lr=1e-4
         )
         reward_calculator = RustRewardCalculator(num_agents)
 
@@ -97,6 +97,9 @@ def fine_tune():
             success_count = 0.0
             episodes_run = 0
             for epoch in range(INNER_EPOCHS):
+                # 🌟 微调专属退火：在前 2000 个 Epoch 内完成从 IQL 到 QMIX 的转换
+                anneal_progress = min(1.0, epoch / 2000.0)
+                current_mix_alpha = 0.9 - anneal_progress * (0.9 - 0.0)
                 obs, _ = env.reset()
                 obs = np.array(obs, dtype=np.float32)
                 hidden_state = trainer.init_hidden(actual_batch_size=num_agents)
@@ -114,7 +117,7 @@ def fine_tune():
                         rewards=np.array(rewards, dtype=np.float32), obs=np.array(obs, dtype=np.float32),
                         next_obs=next_obs, actions=np.array(actions, dtype=np.int64),
                         alignment_config={"use_alignment": False, "value": 0.1},
-                        stop_penalty_config={"use_stop_penalty": True, "value": 0.05},
+                        stop_penalty_config={"use_stop_penalty": True, "value": 0.01},
                         step_penalty_config={"use_step_penalty": True, "value": 0.01},
                         goal_reward_multiple=100.0
                     )
@@ -135,7 +138,7 @@ def fine_tune():
                 if buffer.len() >= BATCH_SIZE:
                     for _ in range(UPDATE_ITERS):
                         batch = buffer.sample(BATCH_SIZE)
-                        loss = trainer.train_step(batch, gamma=0.99)
+                        loss = trainer.train_step(batch, alpha=current_mix_alpha,gamma=0.99)
                         total_loss += loss
                     torch.cuda.empty_cache()
             

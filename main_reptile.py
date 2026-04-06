@@ -101,12 +101,16 @@ if __name__ == '__main__':
             config['curr_progress'] = meta_iter / max(1, (config['meta_iterations'] - 1))
 
             current_alpha = config['alpha_meta_start'] - (config['alpha_meta_start'] - config['alpha_meta_end']) * config['curr_progress']
-
+            # 计算宏观全局的 Mix Q-Loss 退火系数
+            mix_alpha_start = 0.9
+            mix_alpha_end = 0.0
+            current_mix_alpha = mix_alpha_start - config['curr_progress'] * (mix_alpha_start - mix_alpha_end)
             # 步骤 A：下发任务信号 (只传非常轻量的数据)
             for w_id in range(config['num_workers']):
                 task_msg = {
                     'meta_iter': meta_iter,
-                    'curr_progress': config['curr_progress']
+                    'curr_progress': config['curr_progress'],
+                    'mix_alpha': current_mix_alpha
                 }
                 task_queues[w_id].put(task_msg)
 
