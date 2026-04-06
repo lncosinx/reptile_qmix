@@ -239,6 +239,6 @@ class AgentTrainer:
                 max_norm=10.0
             )
             self.optimizer.step()
-
-        self.update_target_networks()
+        # 注释掉这里的目标网络更新，在woker中处理，以实现解耦
+        # self.update_target_networks()
         return loss.item()

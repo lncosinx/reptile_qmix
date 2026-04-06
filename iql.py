@@ -144,6 +144,7 @@ def fine_tune():
                         batch = buffer.sample(BATCH_SIZE)
                         loss = trainer.train_step(batch, gamma=0.99)
                         total_loss += loss
+                    trainer.update_target_networks(tau=0.001)
                     torch.cuda.empty_cache()
             
                 print(f'epoch: {epoch},'

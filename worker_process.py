@@ -216,6 +216,7 @@ def persistent_worker_process(worker_id, global_models, task_queue, result_queue
                     batch = buffer.sample(batch_size)
                     loss = trainer.train_step(batch, alpha=mix_alpha, gamma=config.get('gamma', 0.99))
                     total_loss += loss
+                trainer.update_target_networks(tau=0.02) # 在 Worker 内部更新目标网络，实现完全解耦，软更新，默认tau=0.005
                 torch.cuda.empty_cache()
 
         # ---------------------------------------------------------
