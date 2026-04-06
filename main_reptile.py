@@ -3,7 +3,7 @@ import torch
 import torch.multiprocessing as mp
 from torch.utils.tensorboard import SummaryWriter
 
-from networks import SharedDRQN, ViTMapEncoder, TransformerMixer
+from networks import SharedDRQN, FusedCrossAttentionMixer
 # 注意：你需要将原来的 run_worker_task 改为常驻 worker 的逻辑
 from worker_process import persistent_worker_process
 
@@ -61,16 +61,13 @@ if __name__ == '__main__':
     # 建议将全局模型保留在 CPU 上进行 share_memory，Worker 拉取时再放到 GPU，
     # 这样可以最大程度避免多进程抢占同一块 GPU 显存导致的碎片化和 OOM。
     global_drqn = SharedDRQN(config['obs_channels'], config['num_actions']).cpu()
-    global_map_encoder = ViTMapEncoder(config['map_channels']).cpu()
-    global_mixer = TransformerMixer(config['num_agents']).cpu()
+    global_mixer = FusedCrossAttentionMixer(config['num_agents'], config['map_channels']).cpu()
 
     global_drqn.share_memory()
-    global_map_encoder.share_memory()
     global_mixer.share_memory()
 
     global_models = {
         'drqn': global_drqn,
-        'map_encoder': global_map_encoder,
         'mixer': global_mixer
     }
 
@@ -104,17 +101,21 @@ if __name__ == '__main__':
             config['curr_progress'] = meta_iter / max(1, (config['meta_iterations'] - 1))
 
             current_alpha = config['alpha_meta_start'] - (config['alpha_meta_start'] - config['alpha_meta_end']) * config['curr_progress']
-
+            # 计算宏观全局的 Mix Q-Loss 退火系数
+            mix_alpha_start = 0.9
+            mix_alpha_end = 0.0
+            current_mix_alpha = mix_alpha_start - config['curr_progress'] * (mix_alpha_start - mix_alpha_end)
             # 步骤 A：下发任务信号 (只传非常轻量的数据)
             for w_id in range(config['num_workers']):
                 task_msg = {
                     'meta_iter': meta_iter,
-                    'curr_progress': config['curr_progress']
+                    'curr_progress': config['curr_progress'],
+                    'mix_alpha': current_mix_alpha
                 }
                 task_queues[w_id].put(task_msg)
 
             # 步骤 B：收集结果 (由于 global_models 已通过共享内存读取，此处只回收 Deltas)
-            deltas_drqn, deltas_map_encoder, deltas_mixer = [], [], []
+            deltas_drqn, deltas_mixer = [], []
             total_loss, total_reward, total_success = 0.0, 0.0, 0.0
 
             for _ in range(config['num_workers']):
@@ -122,7 +123,6 @@ if __name__ == '__main__':
                 w_id, worker_deltas, metrics = result_queue.get()
                 
                 deltas_drqn.append(worker_deltas['drqn'])
-                deltas_map_encoder.append(worker_deltas['map_encoder'])
                 deltas_mixer.append(worker_deltas['mixer'])
 
                 total_loss += metrics['loss']
@@ -131,7 +131,6 @@ if __name__ == '__main__':
 
             # 步骤 C：执行 Reptile 元更新
             meta_update(global_drqn, deltas_drqn, current_alpha)
-            meta_update(global_map_encoder, deltas_map_encoder, current_alpha)
             meta_update(global_mixer, deltas_mixer, current_alpha)
 
             # 步骤 D：日志与保存
@@ -148,7 +147,6 @@ if __name__ == '__main__':
 
             if (meta_iter + 1) % 1000 == 0:
                 torch.save(global_drqn.state_dict(), f'./models/global_drqn_iter_{meta_iter+1}.pth')
-                torch.save(global_map_encoder.state_dict(), f'./models/global_map_encoder_iter_{meta_iter+1}.pth')
                 torch.save(global_mixer.state_dict(), f'./models/global_mixer_iter_{meta_iter+1}.pth')
                 print(f"Saved Checkpoint to ./models/ at Meta-Iteration {meta_iter+1}")
 
@@ -168,7 +166,6 @@ if __name__ == '__main__':
             p.join() # 等待进程安全退出
 
         torch.save(global_drqn.state_dict(), f'./models/global_drqn_iter_{meta_iter+1}.pth')
-        torch.save(global_map_encoder.state_dict(), f'./models/global_map_encoder_iter_{meta_iter+1}.pth')
         torch.save(global_mixer.state_dict(), f'./models/global_mixer_iter_{meta_iter+1}.pth')
         print(f"Saved Checkpoint to ./models/ at Meta-Iteration {meta_iter+1}")
         writer.close()

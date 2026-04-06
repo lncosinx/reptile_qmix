@@ -7,7 +7,7 @@ from env_wrapper import NativePogemaWrapper
 from agent_trainer import AgentTrainer
 from rust_buffer import RustReplayBuffer, RustRewardCalculator
 from worker_process import get_generated_map_grid
-from networks import SharedDRQN, StaticMapEncoder, TransformerMixer
+from networks import SharedDRQN, FusedCrossAttentionMixer
 
 config_path = {
     'random': {
@@ -58,7 +58,7 @@ def fine_tune():
         # 初始化 Trainer (支持多智能体数量变化)
         trainer = AgentTrainer(
             obs_channels=3, map_channels=1, num_actions=5, 
-            num_agents=num_agents, device=DEVICE, lr=1e-5
+            num_agents=num_agents, device=DEVICE, lr=1e-4
         )
         reward_calculator = RustRewardCalculator(num_agents)
 
@@ -68,16 +68,14 @@ def fine_tune():
 
             # 对照组：随机初始化
             global_drqn = SharedDRQN(3, 5).to(DEVICE)
-            global_map_encoder = StaticMapEncoder(1).to(DEVICE)
+            global_map_encoder = ViTMapEncoder(1).to(DEVICE)
             global_mixer = TransformerMixer(num_agents).to(DEVICE)
             
 
             trainer.eval_drqn.load_state_dict(global_drqn.state_dict())
-            trainer.eval_map_encoder.load_state_dict(global_map_encoder.state_dict())
             trainer.eval_mixer.load_state_dict(global_mixer.state_dict())
             
             trainer.target_drqn.load_state_dict(trainer.eval_drqn.state_dict())
-            trainer.target_map_encoder.load_state_dict(trainer.eval_map_encoder.state_dict())
             trainer.target_mixer.load_state_dict(trainer.eval_mixer.state_dict())
 
             # 初始化环境
@@ -100,6 +98,9 @@ def fine_tune():
             success_count = 0.0
             episodes_run = 0
             for epoch in range(INNER_EPOCHS):
+                # 🌟 微调专属退火：在前 2000 个 Epoch 内完成从 IQL 到 QMIX 的转换
+                anneal_progress = min(1.0, epoch / 2000.0)
+                current_mix_alpha = 0.9 - anneal_progress * (0.9 - 0.0)
                 obs, _ = env.reset()
                 obs = np.array(obs, dtype=np.float32)
                 hidden_state = trainer.init_hidden(actual_batch_size=num_agents)
@@ -110,6 +111,7 @@ def fine_tune():
                     actions, next_hidden_state = trainer.select_actions(obs, hidden_state, epsilon=0.1)
                     next_obs, rewards, dones, _, _ = env.step(actions)
                     next_obs = np.array(next_obs, dtype=np.float32)
+                    agent_coords = env.get_normalized_coords()
                     
                     native_arrivals += sum(rewards)
                     rewards = reward_calculator.calculate(
@@ -121,7 +123,7 @@ def fine_tune():
                         goal_reward_multiple=100.0
                     )
                     
-                    env.cache_step(obs, actions, rewards, next_obs, dones)
+                    env.cache_step(obs, actions, rewards, next_obs, dones, agent_coords)
                     episode_reward += sum(rewards)
                     obs = next_obs
                     hidden_state = next_hidden_state
@@ -137,8 +139,9 @@ def fine_tune():
                 if buffer.len() >= BATCH_SIZE:
                     for _ in range(UPDATE_ITERS):
                         batch = buffer.sample(BATCH_SIZE)
-                        loss = trainer.train_step(batch, gamma=0.99)
+                        loss = trainer.train_step(batch, alpha=current_mix_alpha,gamma=0.99)
                         total_loss += loss
+                    trainer.update_target_networks(tau=0.001) # 默认tau=0.005
                     torch.cuda.empty_cache()
             
                 print(f'epoch: {epoch},'

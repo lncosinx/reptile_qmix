@@ -7,7 +7,6 @@ from env_wrapper import NativePogemaWrapper
 from agent_trainer import AgentTrainer
 from rust_buffer import RustReplayBuffer, RustRewardCalculator
 from worker_process import get_generated_map_grid
-from networks import SharedDRQN, StaticMapEncoder, TransformerMixer, StandardQMIXMixer
 
 config_path = {
     'random': {
@@ -39,16 +38,15 @@ def load_yaml_configs(config_name):
 def fine_tune():
     # --- 微调超参数配置 ---
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-    META_MODEL_PATH_DRQN = './models/global_drqn_iter_16000.pth' # 请替换为实际的元模型路径
-    META_MODEL_PATH_ENCODER = './models/global_map_encoder_iter_16000.pth'
-    META_MODEL_PATH_MIXER = './models/global_mixer_iter_16000.pth'
+    META_MODEL_PATH_DRQN = './models/global_drqn_iter_9000.pth' # 请替换为实际的元模型路径
+    META_MODEL_PATH_MIXER = './models/global_mixer_iter_9000.pth'
     
     INNER_EPOCHS = 100000     # 微调回合数
     UPDATE_ITERS = 4       # 每个 epoch 后从 Buffer 采样的更新次数
     BATCH_SIZE = 32
     SEQ_LEN = 120
     BUFFER_CAPACITY = 4000
-    ALGORITHM_NAME = "Reptile-Finetuned"
+    ALGORITHM_NAME = "Reptile-QTMIX"
     
     
     os.makedirs('./models', exist_ok=True)
@@ -65,14 +63,11 @@ def fine_tune():
         for map_name in map_names:
             print(f"========== 开始微调: {map_name} | Agents: {num_agents} ==========")
             map_str, _, _, max_episode_steps,_ = get_generated_map_grid(0.0,'random',15,1)
-            
-            # 每次微调前，重置为 Meta 模型的全局权重
+
             trainer.eval_drqn.load_state_dict(torch.load(META_MODEL_PATH_DRQN, map_location=DEVICE))
-            trainer.eval_map_encoder.load_state_dict(torch.load(META_MODEL_PATH_ENCODER, map_location=DEVICE))
             trainer.eval_mixer.load_state_dict(torch.load(META_MODEL_PATH_MIXER, map_location=DEVICE))
-            
+
             trainer.target_drqn.load_state_dict(trainer.eval_drqn.state_dict())
-            trainer.target_map_encoder.load_state_dict(trainer.eval_map_encoder.state_dict())
             trainer.target_mixer.load_state_dict(trainer.eval_mixer.state_dict())
 
             # 初始化环境
@@ -95,6 +90,9 @@ def fine_tune():
             success_count = 0.0
             episodes_run = 0
             for epoch in range(INNER_EPOCHS):
+                # 🌟 微调专属退火：在前 2000 个 Epoch 内完成从 IQL 到 QMIX 的转换
+                anneal_progress = min(1.0, epoch / 2000.0)
+                current_mix_alpha = 0.9 - anneal_progress * (0.9 - 0.0)
                 obs, _ = env.reset()
                 obs = np.array(obs, dtype=np.float32)
                 hidden_state = trainer.init_hidden(actual_batch_size=num_agents)
@@ -105,6 +103,7 @@ def fine_tune():
                     actions, next_hidden_state = trainer.select_actions(obs, hidden_state, epsilon=0.1)
                     next_obs, rewards, dones, _, _ = env.step(actions)
                     next_obs = np.array(next_obs, dtype=np.float32)
+                    agent_coords = env.get_normalized_coords()
                     
                     native_arrivals += sum(rewards)
                     rewards = reward_calculator.calculate(
@@ -116,7 +115,7 @@ def fine_tune():
                         goal_reward_multiple=100.0
                     )
                     
-                    env.cache_step(obs, actions, rewards, next_obs, dones)
+                    env.cache_step(obs, actions, rewards, next_obs, dones, agent_coords)
                     episode_reward += sum(rewards)
                     obs = next_obs
                     hidden_state = next_hidden_state
@@ -132,8 +131,9 @@ def fine_tune():
                 if buffer.len() >= BATCH_SIZE:
                     for _ in range(UPDATE_ITERS):
                         batch = buffer.sample(BATCH_SIZE)
-                        loss = trainer.train_step(batch, gamma=0.99)
+                        loss = trainer.train_step(batch, alpha=current_mix_alpha,gamma=0.99)
                         total_loss += loss
+                    trainer.update_target_networks(tau=0.001) # 默认tau=0.005
                     torch.cuda.empty_cache()
             
                 print(f'epoch: {epoch},'
