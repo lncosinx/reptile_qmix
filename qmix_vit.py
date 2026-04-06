@@ -7,7 +7,7 @@ from env_wrapper import NativePogemaWrapper
 from agent_trainer import AgentTrainer
 from rust_buffer import RustReplayBuffer, RustRewardCalculator
 from worker_process import get_generated_map_grid
-from networks import SharedDRQN, StaticMapEncoder, TransformerMixer
+from networks import SharedDRQN, ViTMapEncoder, TransformerMixer
 
 config_path = {
     'random': {
@@ -48,7 +48,7 @@ def fine_tune():
     BATCH_SIZE = 32
     SEQ_LEN = 120
     BUFFER_CAPACITY = 4000
-    ALGORITHM_NAME = "Reptile-QTMIX"
+    ALGORITHM_NAME = "Reptile-QTMIX-HybridViT"
     
     
     os.makedirs('./models', exist_ok=True)
@@ -68,7 +68,7 @@ def fine_tune():
 
             # 对照组：随机初始化
             global_drqn = SharedDRQN(3, 5).to(DEVICE)
-            global_map_encoder = StaticMapEncoder(1).to(DEVICE)
+            global_map_encoder = ViTMapEncoder(1).to(DEVICE)
             global_mixer = TransformerMixer(num_agents).to(DEVICE)
             
 
