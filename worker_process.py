@@ -106,12 +106,10 @@ def persistent_worker_process(worker_id, global_models, task_queue, result_queue
         # 从共享内存中的全局模型拉取最新权重
         # load_state_dict 会自动将 CPU 上的 shared weights 转移至当前 Trainer 所在的 GPU
         trainer.eval_drqn.load_state_dict(global_models['drqn'].state_dict())
-        trainer.eval_map_encoder.load_state_dict(global_models['map_encoder'].state_dict())
         trainer.eval_mixer.load_state_dict(global_models['mixer'].state_dict())
 
         # Sync Target networks initially for this meta-iteration
         trainer.target_drqn.load_state_dict(global_models['drqn'].state_dict())
-        trainer.target_map_encoder.load_state_dict(global_models['map_encoder'].state_dict())
         trainer.target_mixer.load_state_dict(global_models['mixer'].state_dict())
 
         # ---------------------------------------------------------
@@ -174,6 +172,7 @@ def persistent_worker_process(worker_id, global_models, task_queue, result_queue
             while not done and step < max_steps:
                 actions, next_hidden_state = trainer.select_actions(obs, hidden_state, epsilon=config.get('epsilon', 0.1))
                 next_obs, rewards, dones, truncated, infos = env.step(actions)
+                agent_coords = env.get_normalized_coords()
 
                 native_arrivals += sum(rewards)
                 next_obs = np.array(next_obs, dtype=np.float32)
@@ -189,7 +188,7 @@ def persistent_worker_process(worker_id, global_models, task_queue, result_queue
                     goal_reward_multiple=100.0
                 )
 
-                env.cache_step(obs, actions, rewards, next_obs, dones)
+                env.cache_step(obs, actions, rewards, next_obs, dones, agent_coords)
                 episode_reward += sum(rewards)
                 obs = next_obs
                 hidden_state = next_hidden_state
@@ -222,19 +221,15 @@ def persistent_worker_process(worker_id, global_models, task_queue, result_queue
         # 计算 Parameter Differences (Deltas)
         # \Delta = \theta_{task} - \theta_{global}
         # ---------------------------------------------------------
-        deltas = {'drqn': {}, 'map_encoder': {}, 'mixer': {}}
+        deltas = {'drqn': {}, 'mixer': {}}
         
         # 提取全局模型状态用于比对
         global_drqn_state = global_models['drqn'].state_dict()
-        global_map_encoder_state = global_models['map_encoder'].state_dict()
         global_mixer_state = global_models['mixer'].state_dict()
 
         with torch.no_grad():
             for name, param in trainer.eval_drqn.state_dict().items():
                 deltas['drqn'][name] = (param.cpu() - global_drqn_state[name].cpu()).clone()
-
-            for name, param in trainer.eval_map_encoder.state_dict().items():
-                deltas['map_encoder'][name] = (param.cpu() - global_map_encoder_state[name].cpu()).clone()
 
             for name, param in trainer.eval_mixer.state_dict().items():
                 deltas['mixer'][name] = (param.cpu() - global_mixer_state[name].cpu()).clone()

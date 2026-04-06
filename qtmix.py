@@ -7,7 +7,7 @@ from env_wrapper import NativePogemaWrapper
 from agent_trainer import AgentTrainer
 from rust_buffer import RustReplayBuffer, RustRewardCalculator
 from worker_process import get_generated_map_grid
-from networks import SharedDRQN, ViTMapEncoder, TransformerMixer
+from networks import SharedDRQN, FusedCrossAttentionMixer
 
 config_path = {
     'random': {
@@ -68,16 +68,13 @@ def fine_tune():
 
             # 对照组：随机初始化
             global_drqn = SharedDRQN(3, 5).to(DEVICE)
-            global_map_encoder = ViTMapEncoder(1).to(DEVICE)
-            global_mixer = TransformerMixer(num_agents).to(DEVICE)
+            global_mixer = FusedCrossAttentionMixer(num_agents, 1).to(DEVICE)
             
 
             trainer.eval_drqn.load_state_dict(global_drqn.state_dict())
-            trainer.eval_map_encoder.load_state_dict(global_map_encoder.state_dict())
             trainer.eval_mixer.load_state_dict(global_mixer.state_dict())
             
             trainer.target_drqn.load_state_dict(trainer.eval_drqn.state_dict())
-            trainer.target_map_encoder.load_state_dict(trainer.eval_map_encoder.state_dict())
             trainer.target_mixer.load_state_dict(trainer.eval_mixer.state_dict())
 
             # 初始化环境
@@ -110,18 +107,19 @@ def fine_tune():
                     actions, next_hidden_state = trainer.select_actions(obs, hidden_state, epsilon=0.1)
                     next_obs, rewards, dones, _, _ = env.step(actions)
                     next_obs = np.array(next_obs, dtype=np.float32)
+                    agent_coords = env.get_normalized_coords()
                     
                     native_arrivals += sum(rewards)
                     rewards = reward_calculator.calculate(
                         rewards=np.array(rewards, dtype=np.float32), obs=np.array(obs, dtype=np.float32),
                         next_obs=next_obs, actions=np.array(actions, dtype=np.int64),
                         alignment_config={"use_alignment": False, "value": 0.1},
-                        stop_penalty_config={"use_stop_penalty": True, "value": 0.01},
+                        stop_penalty_config={"use_stop_penalty": True, "value": 0.05},
                         step_penalty_config={"use_step_penalty": True, "value": 0.01},
                         goal_reward_multiple=100.0
                     )
                     
-                    env.cache_step(obs, actions, rewards, next_obs, dones)
+                    env.cache_step(obs, actions, rewards, next_obs, dones, agent_coords)
                     episode_reward += sum(rewards)
                     obs = next_obs
                     hidden_state = next_hidden_state
