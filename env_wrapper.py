@@ -25,7 +25,10 @@ class NativePogemaWrapper:
         return env_ptr
 
     def _extract_global_map(self):
-        """提取全局地图，并严格固定尺寸为 40x40，补充通道维度"""
+        """
+        提取全局地图，并严格固定尺寸为 MAX_SIZE，补充通道维度
+        MAX_SIZE计算公式：MAX_SIZE = Max_Map_Size + 2 * observation_radius
+        """
         if hasattr(self.unwrapped, 'grid') and hasattr(self.unwrapped.grid, 'get_obstacles'):
             obstacles = self.unwrapped.grid.get_obstacles()
         elif hasattr(self.unwrapped, 'grid') and hasattr(self.unwrapped.grid, 'obstacles'):
@@ -35,6 +38,7 @@ class NativePogemaWrapper:
 
         obs_map = np.array(obstacles, dtype=np.float32)
 
+        # MAX_SIZE计算公式：MAX_SIZE = Max_Map_Size + 2 * observation_radius
         MAX_SIZE = 40
         padded_map = np.zeros((MAX_SIZE, MAX_SIZE), dtype=np.float32)
         h, w = obs_map.shape
@@ -124,31 +128,22 @@ class NativePogemaWrapper:
         专供 CTDE 架构下的 Mixer (上帝视角) 使用
         """
         unwrapped_env = self.env.unwrapped
-        grid_config = unwrapped_env.config if hasattr(unwrapped_env, 'config') else unwrapped_env.grid_config
         
-        width = grid_config.map[0].__len__() if isinstance(grid_config.map, list) else grid_config.size
-        height = grid_config.map.__len__() if isinstance(grid_config.map, list) else grid_config.size
+        # 删掉动态获取 width 和 height 的逻辑
+        # 统一使用和 _extract_global_map 一致的固定最大画布尺寸！
+        MAX_SIZE = 40.0 
 
-        # 🌟 修复 1: 完美提取坐标的逻辑
-        # 优先使用 positions_xy，如果不存在则退化为从矩阵解析
-        if hasattr(unwrapped_env.grid, 'positions_xy'):
-            positions = unwrapped_env.grid.positions_xy
-        else:
-            # 兼容极个别旧版 POGEMA
-            pos_matrix = np.array(unwrapped_env.grid.positions)
-            positions = []
-            for agent_id in range(1, self.num_agents + 1):
-                pts = np.argwhere(pos_matrix == agent_id)
-                if len(pts) > 0:
-                    positions.append((pts[0][0], pts[0][1]))
-                else:
-                    positions.append((0, 0))
+        positions = unwrapped_env.grid.positions_xy if hasattr(unwrapped_env.grid, 'positions_xy') else unwrapped_env.grid.positions
         
         coords = []
         for pos in positions:
-            x, y = pos[0], pos[1]
-            norm_x = x / float(width)
-            norm_y = y / float(height)
+            # 兼容可能的旧版格式
+            x, y = pos[0], pos[1] if isinstance(pos, (list, tuple)) else pos
+            
+            # 🌟 核心修复：绝对物理空间向统一归一化空间的无损映射
+            # 这样保证了 1 个物理格子的距离永远是 0.025，彻底解决 sigma 的跨地图缩放畸变！
+            norm_x = x / MAX_SIZE
+            norm_y = y / MAX_SIZE
             coords.append([norm_x, norm_y])
             
         return np.array(coords, dtype=np.float32)
