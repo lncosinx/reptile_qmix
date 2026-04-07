@@ -58,7 +58,7 @@ def fine_tune():
         # 初始化 Trainer (支持多智能体数量变化)
         trainer = AgentTrainer(
             obs_channels=3, map_channels=1, num_actions=5, 
-            num_agents=num_agents, device=DEVICE, lr=1e-4
+            num_agents=num_agents, device=DEVICE, lr=1e-5
         )
         reward_calculator = RustRewardCalculator(num_agents)
 
@@ -68,8 +68,7 @@ def fine_tune():
 
             # 对照组：随机初始化
             global_drqn = SharedDRQN(3, 5).to(DEVICE)
-            global_map_encoder = ViTMapEncoder(1).to(DEVICE)
-            global_mixer = TransformerMixer(num_agents).to(DEVICE)
+            global_mixer = FusedCrossAttentionMixer(num_agents, 1).to(DEVICE)
             
 
             trainer.eval_drqn.load_state_dict(global_drqn.state_dict())
@@ -99,8 +98,9 @@ def fine_tune():
             episodes_run = 0
             for epoch in range(INNER_EPOCHS):
                 # 🌟 微调专属退火：在前 2000 个 Epoch 内完成从 IQL 到 QMIX 的转换
-                anneal_progress = min(1.0, epoch / 2000.0)
+                anneal_progress = min(1.0, epoch / 10000.0)
                 current_mix_alpha = 0.9 - anneal_progress * (0.9 - 0.0)
+                # current_epsilon = 1.0 - anneal_progress * 0.95
                 obs, _ = env.reset()
                 obs = np.array(obs, dtype=np.float32)
                 hidden_state = trainer.init_hidden(actual_batch_size=num_agents)

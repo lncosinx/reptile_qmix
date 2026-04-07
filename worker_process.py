@@ -83,7 +83,7 @@ def persistent_worker_process(worker_id, global_models, task_queue, result_queue
         map_channels=map_channels,
         num_agents=num_agents,
         device=device,
-        lr=config.get('inner_lr', 1e-4)
+        lr=config.get('inner_lr', 1e-5)
     )
 
     # 用于记录当前 Reward Calculator 绑定的智能体数量

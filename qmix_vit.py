@@ -4,7 +4,7 @@ import torch
 import numpy as np
 from pogema import pogema_v0, GridConfig
 from env_wrapper import NativePogemaWrapper
-from agent_trainer import AgentTrainer
+from agent_trainer_vit import AgentTrainer
 from rust_buffer import RustReplayBuffer, RustRewardCalculator
 from worker_process import get_generated_map_grid
 from networks import SharedDRQN, ViTMapEncoder, TransformerMixer
@@ -58,7 +58,7 @@ def fine_tune():
         # 初始化 Trainer (支持多智能体数量变化)
         trainer = AgentTrainer(
             obs_channels=3, map_channels=1, num_actions=5, 
-            num_agents=num_agents, device=DEVICE, lr=1e-5
+            num_agents=num_agents, device=DEVICE, lr=1e-4
         )
         reward_calculator = RustRewardCalculator(num_agents)
 
@@ -139,6 +139,7 @@ def fine_tune():
                         batch = buffer.sample(BATCH_SIZE)
                         loss = trainer.train_step(batch, gamma=0.99)
                         total_loss += loss
+                    trainer.update_target_networks(tau=0.001) # 默认tau=0.005
                     torch.cuda.empty_cache()
             
                 print(f'epoch: {epoch},'

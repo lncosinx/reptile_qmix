@@ -58,7 +58,7 @@ def fine_tune():
         # 初始化 Trainer (支持多智能体数量变化)
         trainer = AgentTrainer(
             obs_channels=3, map_channels=1, num_actions=5, 
-            num_agents=num_agents, device=DEVICE, lr=1e-5
+            num_agents=num_agents, device=DEVICE, lr=1e-4
         )
         reward_calculator = RustRewardCalculator(num_agents)
 
