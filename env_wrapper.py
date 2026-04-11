@@ -100,15 +100,18 @@ class NativePogemaWrapper:
         return next_obs_array, rewards_array, dones_array, truncated, infos
 
     # 🌟 修复 2.2: 方法签名增加 agent_coords 参数
-    def cache_step(self, obs, actions, rewards, next_obs, dones, agent_coords):
+    def cache_step(self, obs, actions, rewards, next_obs, dones, agent_coords=None):
         self.episode_history['states'].append(np.array(obs, dtype=np.float32))
         self.episode_history['actions'].append(np.array(actions, dtype=np.int64))
         self.episode_history['rewards'].append(np.array(rewards, dtype=np.float32))
         self.episode_history['next_states'].append(np.array(next_obs, dtype=np.float32))
         self.episode_history['dones'].append(np.array([float(d) for d in dones], dtype=np.float32))
         
-        # 🌟 修复 2.3: 缓存坐标数据
-        self.episode_history['agent_coords'].append(np.array(agent_coords, dtype=np.float32))
+        if agent_coords is not None:
+            self.episode_history['agent_coords'].append(np.array(agent_coords, dtype=np.float32))
+        else:
+            dummy_coords = np.zeros((self.num_agents, 2), dtype=np.float32)
+            self.episode_history['agent_coords'].append(dummy_coords)
 
     def get_episode_data(self):
         return {

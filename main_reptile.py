@@ -29,8 +29,8 @@ if __name__ == '__main__':
     config = {
         'num_workers': 8,
         'meta_iterations': 30000,
-        'alpha_meta_start': 0.01,     # 激进的起步学习率
-        'alpha_meta_end': 0.001,        
+        'alpha_meta_start': 0.1,     # 激进的起步学习率
+        'alpha_meta_end': 0.01,        
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
         # ... [保留你原有的其他配置] ...
         'num_agents': 8, # 初始智能体数量，但是会随着课程进度增加
